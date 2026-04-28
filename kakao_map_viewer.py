@@ -154,6 +154,7 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
     <html>
     <head>
         <meta charset="utf-8">
+        <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
         <style>
             html, body {
                 margin: 0;
