@@ -179,7 +179,7 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
 
     <body>
         <div id="map"></div>
-        <div id="debug" style="display:none;">1단계: 지도 스크립트 실행 시작</div>
+        <div id="debug">1단계: 지도 스크립트 실행 시작</div>
 
         <script>
             var debugBox = document.getElementById('debug');
