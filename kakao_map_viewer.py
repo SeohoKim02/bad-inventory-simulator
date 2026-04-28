@@ -1,11 +1,21 @@
+import re
 import streamlit.components.v1 as components
 
 
-def create_kakao_map_html(stores, routes, kakao_js_key):
+def _safe_js_name(value):
+    return re.sub(r"\W", "_", str(value))
+
+
+def _escape_js_text(value):
+    return str(value).replace("\\", "\\\\").replace("'", "\\'")
+
+
+def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
     stores_data = stores.copy()
     routes_data = routes.copy()
 
     kakao_js_key = str(kakao_js_key).strip()
+    highlight_paths = highlight_paths or []
 
     stores_data = stores_data.dropna(subset=["latitude", "longitude"])
 
@@ -19,10 +29,10 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
 
     for _, row in stores_data.iterrows():
         raw_store_id = str(row["store_id"])
-        safe_store_id = raw_store_id.replace("-", "_").replace(" ", "_")
+        safe_store_id = _safe_js_name(raw_store_id)
 
-        store_name = str(row["store_name"])
-        store_type = str(row["type"])
+        store_name = _escape_js_text(row["store_name"])
+        store_type = _escape_js_text(row["type"])
         lat = float(row["latitude"])
         lng = float(row["longitude"])
 
@@ -55,7 +65,12 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
         for _, row in stores_data.iterrows()
     }
 
-    lines_js = ""
+    store_name_coord_map = {
+        str(row["store_name"]): (float(row["latitude"]), float(row["longitude"]))
+        for _, row in stores_data.iterrows()
+    }
+
+    base_lines_js = ""
 
     for i, row in routes_data.iterrows():
         from_id = str(row["from_id"])
@@ -67,21 +82,71 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
         from_lat, from_lng = store_coord_map[from_id]
         to_lat, to_lng = store_coord_map[to_id]
 
-        lines_js += f"""
-        var linePath_{i} = [
+        base_lines_js += f"""
+        var baseLinePath_{i} = [
             new kakao.maps.LatLng({from_lat}, {from_lng}),
             new kakao.maps.LatLng({to_lat}, {to_lng})
         ];
 
-        var polyline_{i} = new kakao.maps.Polyline({{
-            path: linePath_{i},
-            strokeWeight: 3,
-            strokeColor: '#FFCC33',
-            strokeOpacity: 0.8,
+        var basePolyline_{i} = new kakao.maps.Polyline({{
+            path: baseLinePath_{i},
+            strokeWeight: 2,
+            strokeColor: '#C9CDD2',
+            strokeOpacity: 0.55,
             strokeStyle: 'solid'
         }});
 
-        polyline_{i}.setMap(map);
+        basePolyline_{i}.setMap(map);
+        """
+
+    highlight_lines_js = ""
+
+    for idx, path_info in enumerate(highlight_paths):
+        path_names = path_info.get("path_names", [])
+        label = _escape_js_text(path_info.get("label", "추천 경로"))
+
+        coords = []
+
+        for name in path_names:
+            if name in store_name_coord_map:
+                coords.append(store_name_coord_map[name])
+
+        if len(coords) < 2:
+            continue
+
+        coord_js = ",\n".join(
+            [f"new kakao.maps.LatLng({lat}, {lng})" for lat, lng in coords]
+        )
+
+        highlight_lines_js += f"""
+        var highlightPath_{idx} = [
+            {coord_js}
+        ];
+
+        var highlightPolyline_{idx} = new kakao.maps.Polyline({{
+            path: highlightPath_{idx},
+            strokeWeight: 7,
+            strokeColor: '#FFD43B',
+            strokeOpacity: 0.95,
+            strokeStyle: 'solid'
+        }});
+
+        highlightPolyline_{idx}.setMap(map);
+
+        var highlightInfo_{idx} = new kakao.maps.InfoWindow({{
+            content: '<div style="padding:8px;font-size:13px;white-space:nowrap;background:#FFF8CC;">'
+                     + '<b>{label}</b>'
+                     + '</div>'
+        }});
+
+        kakao.maps.event.addListener(highlightPolyline_{idx}, 'mouseover', function(mouseEvent) {{
+            highlightInfo_{idx}.setPosition(mouseEvent.latLng);
+            highlightInfo_{idx}.open(map);
+        }});
+
+        kakao.maps.event.addListener(highlightPolyline_{idx}, 'mouseout', function() {{
+            highlightInfo_{idx}.close();
+        }});
         """
 
     html = """
@@ -114,7 +179,7 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
 
     <body>
         <div id="map"></div>
-        <div id="debug">1단계: 지도 스크립트 실행 시작</div>
+        <div id="debug" style="display:none;">1단계: 지도 스크립트 실행 시작</div>
 
         <script>
             var debugBox = document.getElementById('debug');
@@ -132,9 +197,11 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
 
                     var map = new kakao.maps.Map(mapContainer, mapOption);
 
+                    __BASE_LINES_JS__
+
                     __MARKERS_JS__
 
-                    __LINES_JS__
+                    __HIGHLIGHT_LINES_JS__
 
                     debugBox.innerHTML = '3단계: 카카오맵 표시 완료';
                 } catch (error) {
@@ -169,8 +236,9 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
     html = html.replace("__KAKAO_KEY__", kakao_js_key)
     html = html.replace("__CENTER_LAT__", str(center_lat))
     html = html.replace("__CENTER_LNG__", str(center_lng))
+    html = html.replace("__BASE_LINES_JS__", base_lines_js)
     html = html.replace("__MARKERS_JS__", markers_js)
-    html = html.replace("__LINES_JS__", lines_js)
+    html = html.replace("__HIGHLIGHT_LINES_JS__", highlight_lines_js)
 
     return html
 
@@ -178,4 +246,8 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
 def show_kakao_map(stores, routes, kakao_js_key):
     html = create_kakao_map_html(stores, routes, kakao_js_key)
     components.html(html, height=720, scrolling=False)
-    
+
+
+def show_kakao_map_with_highlights(stores, routes, kakao_js_key, highlight_paths):
+    html = create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths)
+    components.html(html, height=720, scrolling=False)
