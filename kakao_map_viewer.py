@@ -96,32 +96,32 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
                 width: 100%;
                 height: 100%;
             }
+
             #map {
                 width: 100%;
                 height: 650px;
                 border-radius: 14px;
                 border: 1px solid #dddddd;
             }
+
             #debug {
                 margin-top: 10px;
                 color: #444;
                 font-size: 14px;
             }
         </style>
-        <script type="text/javascript" src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_KEY__&autoload=false"></script>
     </head>
+
     <body>
         <div id="map"></div>
-        <div id="debug">지도 로딩 준비 중...</div>
+        <div id="debug">1단계: 지도 스크립트 실행 시작</div>
 
         <script>
             var debugBox = document.getElementById('debug');
 
-            if (typeof kakao === 'undefined') {
-                debugBox.innerHTML = '카카오 SDK가 로드되지 않았습니다. JavaScript 키 또는 도메인 등록을 확인하세요.';
-            } else {
-                kakao.maps.load(function() {
-                    debugBox.innerHTML = '카카오맵 SDK 로드 성공';
+            function initMap() {
+                try {
+                    debugBox.innerHTML = '2단계: 카카오 SDK 로드 성공';
 
                     var mapContainer = document.getElementById('map');
 
@@ -135,8 +135,32 @@ def create_kakao_map_html(stores, routes, kakao_js_key):
                     __MARKERS_JS__
 
                     __LINES_JS__
-                });
+
+                    debugBox.innerHTML = '3단계: 카카오맵 표시 완료';
+                } catch (error) {
+                    debugBox.innerHTML = '지도 생성 중 오류: ' + error.message;
+                }
             }
+
+            var script = document.createElement('script');
+            script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_KEY__&autoload=false';
+
+            script.onload = function() {
+                if (typeof kakao === 'undefined') {
+                    debugBox.innerHTML = '카카오 SDK 객체를 찾을 수 없습니다. JavaScript 키 또는 도메인을 확인하세요.';
+                    return;
+                }
+
+                kakao.maps.load(function() {
+                    initMap();
+                });
+            };
+
+            script.onerror = function() {
+                debugBox.innerHTML = '카카오 SDK 파일 로드 실패. JavaScript 키 또는 도메인 등록을 확인하세요.';
+            };
+
+            document.head.appendChild(script);
         </script>
     </body>
     </html>
