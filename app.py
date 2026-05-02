@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from datetime import time
 from numbers import Number
 
@@ -11,8 +12,14 @@ from time_window_analyzer import analyze_trade_time_windows
 from transfer_path_analyzer import analyze_direct_vs_dc_transfer
 from promotion_analyzer import analyze_promotion_vs_transfer
 from network_path_analyzer import analyze_multi_store_network_paths
-from kakao_map_viewer import show_kakao_map, show_kakao_map_with_highlights
 from final_summary import build_final_recommendations
+
+from kakao_map_viewer import show_kakao_map, show_kakao_map_with_highlights
+
+try:
+    from kakao_map_viewer import show_kakao_map_with_truck
+except ImportError:
+    show_kakao_map_with_truck = None
 
 
 # =========================
@@ -24,445 +31,802 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📦 Varo")
-st.write("편의점 재고 공유 및 최적 의사결정 시스템")
+if "selected_mode" not in st.session_state:
+    st.session_state.selected_mode = None
 
-
-# =========================
-# Inventory 장바구니 상태 저장
-# =========================
 if "cart" not in st.session_state:
     st.session_state.cart = []
 
 
 # =========================
-# 사이드바 설정
+# 공통 상단
 # =========================
-st.sidebar.header("지도 설정")
-
-kakao_js_key = st.sidebar.text_input(
-    "카카오맵 JavaScript 키 입력",
-    type="password",
-    help="카카오 개발자 사이트에서 복사한 JavaScript 키를 입력하세요."
-)
-
-st.sidebar.markdown("---")
-st.sidebar.header("단일 상품 직접 계산")
-
-store_name = st.sidebar.text_input("점포명", "강남점")
-product_name = st.sidebar.text_input("상품명", "삼각김밥")
-
-stock_qty = st.sidebar.number_input("현재 재고 수량", min_value=0, value=100)
-sales_30d = st.sidebar.number_input("최근 30일 판매량", min_value=0, value=5)
-inbound_days = st.sidebar.number_input("입고 후 지난 일수", min_value=0, value=50)
-
-unit_cost = st.sidebar.number_input("상품 1개당 원가(원)", min_value=0, value=1500)
-daily_holding_cost = st.sidebar.number_input("하루 보관비(원)", min_value=0, value=20)
-disposal_cost_per_unit = st.sidebar.number_input("상품 1개당 폐기비용(원)", min_value=0, value=300)
-
-discount_rate = st.sidebar.number_input(
-    "할인율(%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=20.0
-)
-
-expected_sales_increase_rate = st.sidebar.number_input(
-    "할인 시 판매 증가율(%)",
-    min_value=0.0,
-    value=50.0
-)
-
-transfer_possible = st.sidebar.selectbox("타점포 이동 가능 여부", ["가능", "불가능"])
-distance_km = st.sidebar.number_input("점포 간 거리(km)", min_value=0.0, value=10.0)
-cost_per_km = st.sidebar.number_input("km당 운송비(원)", min_value=0.0, value=500.0)
-target_store_sales_30d = st.sidebar.number_input("이동 대상 점포 최근 30일 판매량", min_value=0, value=20)
+st.title("📦 Varo")
+st.write("편의점 재고 공유 및 최적 의사결정 시스템")
 
 
 # =========================
-# 엑셀 업로드
+# 첫 화면: 방식 선택
 # =========================
-st.markdown("---")
-st.subheader("엑셀 파일 입력")
+def show_mode_selector():
+    st.markdown("---")
+    st.subheader("사용할 방식을 선택하세요")
 
-uploaded_file = st.file_uploader(
-    "편의점 재고 데이터 엑셀 파일을 업로드하세요",
-    type=["xlsx"]
-)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(
+            """
+            <div style="
+                padding: 28px;
+                border-radius: 20px;
+                border: 1px solid #eee;
+                background: linear-gradient(135deg, #fffbea, #fff3bf);
+                min-height: 260px;
+            ">
+                <h3>🧮 개별 입력 계산</h3>
+                <p>
+                점포명, 상품명, 재고 수량, 판매량, 할인율, 이동 가능 여부 등을
+                직접 입력해서 악성재고 여부와 처리 전략을 계산합니다.
+                </p>
+                <p><b>추천 상황</b></p>
+                <ul>
+                    <li>간단한 단일 상품 테스트</li>
+                    <li>계산 방식 설명</li>
+                    <li>발표 시 기본 원리 시연</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if st.button("🧮 개별 입력 계산 시작", use_container_width=True):
+            st.session_state.selected_mode = "single"
+            st.rerun()
+
+    with col2:
+        st.markdown(
+            """
+            <div style="
+                padding: 28px;
+                border-radius: 20px;
+                border: 1px solid #eee;
+                background: linear-gradient(135deg, #eef7ff, #e7f5ff);
+                min-height: 260px;
+            ">
+                <h3>📊 엑셀 기반 최적 경로 추천</h3>
+                <p>
+                여러 점포, 상품, 재고, 경로 데이터를 엑셀로 업로드하여
+                DC 경유, 점포 간 이동, 프로모션, 다중 경로를 종합 분석합니다.
+                </p>
+                <p><b>추천 상황</b></p>
+                <ul>
+                    <li>여러 점포 동시 분석</li>
+                    <li>최적 경로 추천</li>
+                    <li>카카오맵 기반 Truck 시뮬레이션</li>
+                </ul>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        if st.button("📊 엑셀 기반 분석 시작", use_container_width=True):
+            st.session_state.selected_mode = "excel"
+            st.rerun()
+
+    st.markdown("---")
+    st.info("처음 사용하는 경우에는 개별 입력 계산으로 원리를 확인한 뒤, 엑셀 기반 분석으로 확장하는 것을 추천합니다.")
 
 
-if uploaded_file is not None:
+# =========================
+# 뒤로가기 버튼
+# =========================
+def show_back_button():
+    if st.button("← 방식 선택 화면으로 돌아가기"):
+        st.session_state.selected_mode = None
+        st.rerun()
+
+
+# =========================
+# 1. 개별 입력 계산 모드
+# =========================
+def show_single_calculator():
+    show_back_button()
+
+    st.markdown("---")
+    st.header("🧮 개별 입력 기반 악성재고 계산")
+
+    st.write(
+        "단일 점포와 단일 상품을 기준으로 악성재고 여부, 비용 비교, 최종 처리 전략을 계산합니다."
+    )
+
+    st.sidebar.header("개별 입력값 설정")
+
+    store_name = st.sidebar.text_input("점포명", "강남점")
+    product_name = st.sidebar.text_input("상품명", "삼각김밥")
+
+    stock_qty = st.sidebar.number_input("현재 재고 수량", min_value=0, value=100)
+    sales_30d = st.sidebar.number_input("최근 30일 판매량", min_value=0, value=5)
+    inbound_days = st.sidebar.number_input("입고 후 지난 일수", min_value=0, value=50)
+
+    unit_cost = st.sidebar.number_input("상품 1개당 원가(원)", min_value=0, value=1500)
+    daily_holding_cost = st.sidebar.number_input("하루 보관비(원)", min_value=0, value=20)
+    disposal_cost_per_unit = st.sidebar.number_input("상품 1개당 폐기비용(원)", min_value=0, value=300)
+
+    discount_rate = st.sidebar.number_input(
+        "할인율(%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=20.0
+    )
+
+    expected_sales_increase_rate = st.sidebar.number_input(
+        "할인 시 판매 증가율(%)",
+        min_value=0.0,
+        value=50.0
+    )
+
+    transfer_possible = st.sidebar.selectbox("타점포 이동 가능 여부", ["가능", "불가능"])
+    distance_km = st.sidebar.number_input("점포 간 거리(km)", min_value=0.0, value=10.0)
+    cost_per_km = st.sidebar.number_input("km당 운송비(원)", min_value=0.0, value=500.0)
+    target_store_sales_30d = st.sidebar.number_input("이동 대상 점포 최근 30일 판매량", min_value=0, value=20)
+
+    st.markdown("---")
+    st.subheader("입력 정보")
+
+    col_a, col_b = st.columns(2)
+    col_a.write(f"점포명: **{store_name}**")
+    col_b.write(f"상품명: **{product_name}**")
+
+    if st.button("계산 시작", type="primary"):
+        result = calculate_inventory_analysis(
+            stock_qty=stock_qty,
+            sales_30d=sales_30d,
+            inbound_days=inbound_days,
+            unit_cost=unit_cost,
+            daily_holding_cost=daily_holding_cost,
+            discount_rate=discount_rate,
+            expected_sales_increase_rate=expected_sales_increase_rate,
+            transfer_possible=(transfer_possible == "가능"),
+            distance_km=distance_km,
+            cost_per_km=cost_per_km,
+            target_store_sales_30d=target_store_sales_30d,
+            disposal_cost_per_unit=disposal_cost_per_unit,
+        )
+
+        discount_comparison = analyze_discount_options(
+            stock_qty=stock_qty,
+            sales_30d=sales_30d,
+            unit_cost=unit_cost,
+            daily_holding_cost=daily_holding_cost,
+            discount_rates=[10, 20, 30, 40],
+            expected_sales_increase_rate=expected_sales_increase_rate,
+        )
+
+        st.success("계산이 완료되었습니다.")
+
+        st.markdown("---")
+        st.subheader("악성재고 판단 결과")
+
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric("재고소진 예상일수", f"{result['stock_cover_days']}일")
+        col2.metric("위험점수", f"{result['risk_score']}점")
+        col3.metric("악성재고 여부", "예" if result["is_bad_stock"] else "아니오")
+
+        st.subheader("판단 이유")
+
+        if result["reasons"]:
+            for reason in result["reasons"]:
+                st.write(f"- {reason}")
+        else:
+            st.write("위험 요소가 크지 않습니다.")
+
+        st.markdown("---")
+        st.subheader("비용 비교")
+
+        st.write(f"유지 비용: {result['keep_cost']}원")
+        st.write(f"할인 전략 순비용: {result['discount_net_cost']}원")
+        st.write(f"폐기 비용: {result['disposal_cost']}원")
+
+        if result["transfer_net_cost"] is not None:
+            st.write(f"자동 계산된 이동비: {result['transfer_cost']}원")
+            st.write(f"타점포 이동 순비용: {result['transfer_net_cost']}원")
+
+            cost_df = pd.DataFrame(
+                {
+                    "전략": ["유지", "할인", "타점포 이동", "폐기"],
+                    "비용": [
+                        result["keep_cost"],
+                        result["discount_net_cost"],
+                        result["transfer_net_cost"],
+                        result["disposal_cost"],
+                    ],
+                }
+            )
+        else:
+            st.write("타점포 이동 순비용: 이동 불가능")
+
+            cost_df = pd.DataFrame(
+                {
+                    "전략": ["유지", "할인", "폐기"],
+                    "비용": [
+                        result["keep_cost"],
+                        result["discount_net_cost"],
+                        result["disposal_cost"],
+                    ],
+                }
+            )
+
+        st.dataframe(cost_df, use_container_width=True)
+        st.bar_chart(cost_df, x="전략", y="비용")
+
+        st.markdown("---")
+        st.subheader("최종 추천")
+
+        st.success(f"추천 전략: {result['best_action']}")
+        st.write(f"추천 이유: {result['recommendation_reason']}")
+        st.write(f"발주 조언: **{result['order_advice']}**")
+
+        st.markdown("---")
+        st.subheader("할인율별 비교")
+
+        st.dataframe(discount_comparison)
+
+        discount_chart_data = pd.DataFrame(
+            {
+                "할인율": [f"{item['discount_rate']}%" for item in discount_comparison],
+                "순비용": [item["net_cost"] for item in discount_comparison],
+            }
+        )
+
+        st.bar_chart(discount_chart_data, x="할인율", y="순비용")
+
+        st.markdown("---")
+        st.subheader("계산 방식")
+
+        st.write(result["formula_text"]["stock_cover_days_formula"])
+        st.write(result["formula_text"]["risk_formula"])
+        st.write(result["formula_text"]["keep_cost_formula"])
+        st.write(result["formula_text"]["discount_formula"])
+        st.write(result["formula_text"]["transfer_formula"])
+        st.write(result["formula_text"]["disposal_formula"])
+
+
+# =========================
+# 2. 엑셀 기반 최적 경로 추천 모드
+# =========================
+def show_excel_optimizer():
+    show_back_button()
+
+    st.markdown("---")
+    st.header("📊 엑셀 기반 최적 경로 추천")
+
+    st.write(
+        "엑셀 데이터를 기반으로 DC-점포 거리, 컷라인, 거래가능시간, 프로모션, 다중 경로, Truck 이동을 종합 분석합니다."
+    )
+
+    st.sidebar.header("지도 설정")
+
+    kakao_js_key = st.sidebar.text_input(
+        "카카오맵 JavaScript 키 입력",
+        type="password",
+        help="카카오 개발자 사이트에서 복사한 JavaScript 키를 입력하세요."
+    )
+
+    st.markdown("---")
+    st.subheader("엑셀 파일 입력")
+
+    uploaded_file = st.file_uploader(
+        "편의점 재고 데이터 엑셀 파일을 업로드하세요",
+        type=["xlsx"]
+    )
+
+    if uploaded_file is None:
+        st.info("엑셀 파일을 업로드하면 분석이 시작됩니다.")
+        return
+
     excel_data, missing_sheets = load_excel_file(uploaded_file)
 
     if missing_sheets:
         st.error(f"엑셀 파일에 필요한 시트가 없습니다: {missing_sheets}")
+        return
 
+    st.success("엑셀 파일을 성공적으로 불러왔습니다.")
+
+    stores = excel_data["stores"]
+    products = excel_data["products"]
+    inventory = excel_data["inventory"]
+    routes = excel_data["routes"]
+
+    # =========================
+    # 데이터 요약
+    # =========================
+    st.subheader("데이터 요약")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("점포/DC 수", f"{len(stores)}개")
+    col2.metric("상품 수", f"{len(products)}개")
+    col3.metric("재고 데이터", f"{len(inventory)}건")
+    col4.metric("경로 데이터", f"{len(routes)}건")
+
+    with st.expander("원본 엑셀 데이터 보기"):
+        st.write("stores 시트")
+        st.dataframe(stores)
+
+        st.write("products 시트")
+        st.dataframe(products)
+
+        st.write("inventory 시트")
+        st.dataframe(inventory)
+
+        st.write("routes 시트")
+        st.dataframe(routes)
+
+    # =========================
+    # 분석 조건
+    # =========================
+    st.markdown("---")
+    st.subheader("분석 조건 설정")
+
+    setting_col1, setting_col2, setting_col3 = st.columns(3)
+
+    with setting_col1:
+        departure_time = st.time_input(
+            "DC/점포 출발 예정 시간",
+            value=time(9, 0),
+            key="departure_time_excel"
+        )
+
+    with setting_col2:
+        promotion_type = st.selectbox(
+            "프로모션 유형",
+            ["할인 프로모션", "1+1 프로모션"],
+            key="promotion_type_excel"
+        )
+
+    with setting_col3:
+        promotion_discount_rate = st.number_input(
+            "프로모션 할인율(%)",
+            min_value=0.0,
+            max_value=100.0,
+            value=20.0,
+            key="promotion_discount_rate_excel"
+        )
+
+    setting_col4, setting_col5 = st.columns(2)
+
+    with setting_col4:
+        promotion_sales_increase_rate = st.number_input(
+            "프로모션 예상 판매 증가율(%)",
+            min_value=0.0,
+            max_value=500.0,
+            value=80.0,
+            key="promotion_sales_increase_rate_excel"
+        )
+
+    with setting_col5:
+        promotion_fixed_cost = st.number_input(
+            "프로모션 고정비(원)",
+            min_value=0,
+            value=0,
+            key="promotion_fixed_cost_excel"
+        )
+
+    # =========================
+    # 분석 계산
+    # =========================
+    dc_routes, best_dc_by_retailer = analyze_dc_retailer_routes(stores, routes)
+
+    if dc_routes.empty:
+        cutline_result = None
+        best_valid_routes = None
+        no_valid_items = None
+        time_result = None
+        time_error = "DC와 점포를 연결하는 route 데이터가 없어 컷라인/시간 분석을 할 수 없습니다."
     else:
-        st.success("엑셀 파일을 성공적으로 불러왔습니다.")
-
-        stores = excel_data["stores"]
-        products = excel_data["products"]
-        inventory = excel_data["inventory"]
-        routes = excel_data["routes"]
-
-        # =========================
-        # 데이터 요약
-        # =========================
-        st.subheader("데이터 요약")
-
-        total_stores = len(stores)
-        total_products = len(products)
-        total_inventory = len(inventory)
-        total_routes = len(routes)
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        col1.metric("점포/DC 수", f"{total_stores}개")
-        col2.metric("상품 수", f"{total_products}개")
-        col3.metric("재고 데이터", f"{total_inventory}건")
-        col4.metric("경로 데이터", f"{total_routes}건")
-
-        with st.expander("원본 엑셀 데이터 보기"):
-            st.write("stores 시트")
-            st.dataframe(stores)
-
-            st.write("products 시트")
-            st.dataframe(products)
-
-            st.write("inventory 시트")
-            st.dataframe(inventory)
-
-            st.write("routes 시트")
-            st.dataframe(routes)
-
-        # =========================
-        # 분석 조건 설정
-        # =========================
-        st.markdown("---")
-        st.subheader("분석 조건 설정")
-
-        setting_col1, setting_col2, setting_col3 = st.columns(3)
-
-        with setting_col1:
-            departure_time = st.time_input(
-                "DC/점포 출발 예정 시간",
-                value=time(9, 0),
-                key="departure_time_excel"
-            )
-
-        with setting_col2:
-            promotion_type = st.selectbox(
-                "프로모션 유형",
-                ["할인 프로모션", "1+1 프로모션"],
-                key="promotion_type_excel"
-            )
-
-        with setting_col3:
-            promotion_discount_rate = st.number_input(
-                "프로모션 할인율(%)",
-                min_value=0.0,
-                max_value=100.0,
-                value=20.0,
-                key="promotion_discount_rate_excel"
-            )
-
-        setting_col4, setting_col5 = st.columns(2)
-
-        with setting_col4:
-            promotion_sales_increase_rate = st.number_input(
-                "프로모션 예상 판매 증가율(%)",
-                min_value=0.0,
-                max_value=500.0,
-                value=80.0,
-                key="promotion_sales_increase_rate_excel"
-            )
-
-        with setting_col5:
-            promotion_fixed_cost = st.number_input(
-                "프로모션 고정비(원)",
-                min_value=0,
-                value=0,
-                key="promotion_fixed_cost_excel"
-            )
-
-        # =========================
-        # 1. DC-점포 거리 및 운송비 계산
-        # =========================
-        dc_routes, best_dc_by_retailer = analyze_dc_retailer_routes(
-            stores,
-            routes
-        )
-
-        # =========================
-        # 2. 제품별 거리 컷라인 + 거래가능시간
-        # =========================
-        if dc_routes.empty:
-            cutline_result = None
-            best_valid_routes = None
-            no_valid_items = None
-            time_result = None
-            time_error = "DC와 점포를 연결하는 route 데이터가 없어 컷라인/시간 분석을 할 수 없습니다."
-        else:
-            cutline_result, best_valid_routes, no_valid_items = analyze_product_distance_cutline(
-                products,
-                inventory,
-                dc_routes
-            )
-
-            time_result, time_error = analyze_trade_time_windows(
-                cutline_result,
-                stores,
-                departure_time
-            )
-
-        # =========================
-        # 3. 점포 간 직접 이동 vs DC 경유
-        # =========================
-        transfer_path_result = analyze_direct_vs_dc_transfer(
-            stores,
+        cutline_result, best_valid_routes, no_valid_items = analyze_product_distance_cutline(
             products,
             inventory,
-            routes,
+            dc_routes
+        )
+
+        time_result, time_error = analyze_trade_time_windows(
+            cutline_result,
+            stores,
             departure_time
         )
 
-        # =========================
-        # 4. 프로모션 vs 재배치
-        # =========================
-        promotion_result = analyze_promotion_vs_transfer(
-            stores,
-            inventory,
-            transfer_path_result,
-            promotion_type,
-            promotion_discount_rate,
-            promotion_sales_increase_rate,
-            promotion_fixed_cost
+    transfer_path_result = analyze_direct_vs_dc_transfer(
+        stores,
+        products,
+        inventory,
+        routes,
+        departure_time
+    )
+
+    promotion_result = analyze_promotion_vs_transfer(
+        stores,
+        inventory,
+        transfer_path_result,
+        promotion_type,
+        promotion_discount_rate,
+        promotion_sales_increase_rate,
+        promotion_fixed_cost
+    )
+
+    network_path_result, network_error = analyze_multi_store_network_paths(
+        stores,
+        products,
+        routes,
+        transfer_path_result,
+        departure_time
+    )
+
+    final_recommendations, final_rec_summary = build_final_recommendations(
+        promotion_result,
+        network_path_result
+    )
+
+    # =========================
+    # 최종 추천
+    # =========================
+    st.markdown("---")
+    st.subheader("최종 추천 모아보기")
+
+    if final_recommendations.empty:
+        st.info("최종 추천으로 정리할 결과가 없습니다.")
+    else:
+        summary_col1, summary_col2 = st.columns(2)
+
+        summary_col1.metric("최종 추천 건수", f"{len(final_recommendations)}건")
+        summary_col2.metric("추천 유형 수", f"{len(final_rec_summary)}개")
+
+        st.write("추천 유형 요약")
+        st.dataframe(final_rec_summary)
+
+        st.bar_chart(
+            final_rec_summary.set_index("final_recommendation")["count"]
         )
 
-        # =========================
-        # 5. 여러 점포 연결 최저비용 경로
-        # =========================
-        network_path_result, network_error = analyze_multi_store_network_paths(
-            stores,
-            products,
-            routes,
-            transfer_path_result,
-            departure_time
-        )
-
-        # =========================
-        # 6. 최종 추천 모아보기
-        # =========================
-        final_recommendations, final_rec_summary = build_final_recommendations(
-            promotion_result,
-            network_path_result
-        )
-
-        st.markdown("---")
-        st.subheader("최종 추천 모아보기")
-
-        if final_recommendations.empty:
-            st.info("최종 추천으로 정리할 결과가 없습니다.")
-
-        else:
-            summary_col1, summary_col2 = st.columns(2)
-
-            summary_col1.metric("최종 추천 건수", f"{len(final_recommendations)}건")
-            summary_col2.metric("추천 유형 수", f"{len(final_rec_summary)}개")
-
-            st.write("추천 유형 요약")
-            st.dataframe(final_rec_summary)
-
-            st.bar_chart(
-                final_rec_summary.set_index("final_recommendation")["count"]
-            )
-
-            st.write("최종 추천 상세")
-            st.dataframe(
-                final_recommendations[
-                    [
-                        "product_name",
-                        "source_store",
-                        "target_store",
-                        "suggested_qty",
-                        "final_recommendation",
-                        "estimated_cost",
-                        "reason",
-                    ]
+        st.write("최종 추천 상세")
+        st.dataframe(
+            final_recommendations[
+                [
+                    "product_name",
+                    "source_store",
+                    "target_store",
+                    "suggested_qty",
+                    "final_recommendation",
+                    "estimated_cost",
+                    "reason",
                 ]
+            ]
+        )
+
+        st.markdown("---")
+        st.subheader("🧺 Inventory 장바구니 담기")
+
+        final_recommendations_view = final_recommendations.reset_index(drop=True)
+
+        selected_index = st.selectbox(
+            "장바구니에 담을 추천 항목 선택",
+            final_recommendations_view.index,
+            format_func=lambda i: (
+                f"{final_recommendations_view.loc[i, 'product_name']} | "
+                f"{final_recommendations_view.loc[i, 'source_store']} → "
+                f"{final_recommendations_view.loc[i, 'target_store']} | "
+                f"{final_recommendations_view.loc[i, 'final_recommendation']}"
+            ),
+            key="cart_select_recommendation"
+        )
+
+        if st.button("🛒 Inventory에 담기", key="add_to_inventory_cart"):
+            selected_row = final_recommendations_view.loc[selected_index]
+
+            cart_item = {
+                "상품명": selected_row["product_name"],
+                "보내는 점포": selected_row["source_store"],
+                "받는 점포": selected_row["target_store"],
+                "수량": selected_row["suggested_qty"],
+                "추천 전략": selected_row["final_recommendation"],
+                "예상 비용": selected_row["estimated_cost"],
+                "추천 이유": selected_row["reason"],
+            }
+
+            st.session_state.cart.append(cart_item)
+            st.success("Inventory 장바구니에 담았습니다.")
+
+    # =========================
+    # Inventory 장바구니
+    # =========================
+    st.subheader("🧾 Inventory 장바구니")
+
+    if len(st.session_state.cart) == 0:
+        st.info("장바구니가 비어있습니다.")
+    else:
+        for i, item in enumerate(st.session_state.cart):
+            c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+
+            with c1:
+                st.write(
+                    f"**{item['상품명']}** / "
+                    f"{item['보내는 점포']} → {item['받는 점포']}"
+                )
+                st.caption(f"추천 이유: {item['추천 이유']}")
+
+            with c2:
+                st.write(f"수량: {item['수량']}개")
+
+            with c3:
+                st.write(f"전략: {item['추천 전략']}")
+
+                cost_value = item["예상 비용"]
+                if isinstance(cost_value, Number):
+                    st.write(f"예상 비용: {cost_value:,.0f}원")
+                else:
+                    st.write(f"예상 비용: {cost_value}")
+
+            with c4:
+                if st.button("삭제", key=f"delete_cart_{i}"):
+                    st.session_state.cart.pop(i)
+                    st.rerun()
+
+        total_cost = sum(
+            item["예상 비용"]
+            for item in st.session_state.cart
+            if isinstance(item["예상 비용"], Number)
+        )
+
+        cart_col1, cart_col2 = st.columns(2)
+
+        cart_col1.metric("담긴 추천 항목 수", f"{len(st.session_state.cart)}건")
+        cart_col2.metric("총 예상 비용", f"{total_cost:,.0f}원")
+
+        if st.button("장바구니 전체 비우기", key="clear_inventory_cart"):
+            st.session_state.cart = []
+            st.rerun()
+
+    # =========================
+    # 지도
+    # =========================
+    st.markdown("---")
+    st.subheader("카카오맵 기반 점포 및 경로 시각화")
+
+    if kakao_js_key:
+        show_kakao_map(stores, routes, kakao_js_key)
+    else:
+        st.info("카카오맵을 보려면 왼쪽 사이드바에 JavaScript 키를 입력하세요.")
+
+    # =========================
+    # 추천 경로 강조
+    # =========================
+    st.markdown("---")
+    st.subheader("추천 경로 강조 지도")
+
+    highlight_paths = []
+
+    if not transfer_path_result.empty:
+        recommended_transfer_paths = transfer_path_result[
+            transfer_path_result["recommended_path"] != "이동 비추천"
+        ]
+
+        for _, path_row in recommended_transfer_paths.iterrows():
+            if path_row["recommended_path"] == "직접 이동 추천":
+                path_names = [
+                    path_row["source_store"],
+                    path_row["target_store"],
+                ]
+
+            elif path_row["recommended_path"] == "DC 경유 이동 추천":
+                path_names = [
+                    path_row["source_store"],
+                    path_row["via_dc"],
+                    path_row["target_store"],
+                ]
+
+            else:
+                continue
+
+            highlight_paths.append(
+                {
+                    "path_names": path_names,
+                    "label": f"{path_row['product_name']} - {path_row['recommended_path']}",
+                }
             )
 
-            # =========================
-            # Inventory 장바구니 담기
-            # =========================
-            st.markdown("---")
-            st.subheader("🧺 Inventory 장바구니 담기")
+    if not network_path_result.empty:
+        network_recommended_paths = network_path_result[
+            network_path_result["network_recommendation"] == "다중 경로 추천"
+        ]
 
-            final_recommendations_view = final_recommendations.reset_index(drop=True)
+        for _, network_row in network_recommended_paths.iterrows():
+            path_names = str(network_row["network_path"]).split(" → ")
 
-            selected_index = st.selectbox(
-                "장바구니에 담을 추천 항목 선택",
-                final_recommendations_view.index,
-                format_func=lambda i: (
-                    f"{final_recommendations_view.loc[i, 'product_name']} | "
-                    f"{final_recommendations_view.loc[i, 'source_store']} → "
-                    f"{final_recommendations_view.loc[i, 'target_store']} | "
-                    f"{final_recommendations_view.loc[i, 'final_recommendation']}"
-                ),
-                key="cart_select_recommendation"
+            highlight_paths.append(
+                {
+                    "path_names": path_names,
+                    "label": f"{network_row['product_name']} - 다중 경로 추천",
+                }
             )
 
-            if st.button("🛒 Inventory에 담기", key="add_to_inventory_cart"):
-                selected_row = final_recommendations_view.loc[selected_index]
+    if kakao_js_key and highlight_paths:
+        show_kakao_map_with_highlights(
+            stores,
+            routes,
+            kakao_js_key,
+            highlight_paths
+        )
+    elif not kakao_js_key:
+        st.info("추천 경로 지도를 보려면 왼쪽 사이드바에 카카오맵 JavaScript 키를 입력하세요.")
+    else:
+        st.info("강조 표시할 추천 경로가 없습니다.")
 
-                cart_item = {
-                    "상품명": selected_row["product_name"],
-                    "보내는 점포": selected_row["source_store"],
-                    "받는 점포": selected_row["target_store"],
-                    "수량": selected_row["suggested_qty"],
-                    "추천 전략": selected_row["final_recommendation"],
-                    "예상 비용": selected_row["estimated_cost"],
-                    "추천 이유": selected_row["reason"],
+    # =========================
+    # Truck 이동 + Inventory 변화
+    # =========================
+    st.markdown("---")
+    st.subheader("🚚 Truck 이동 시뮬레이션 + Inventory 변화")
+
+    truck_speed = st.slider(
+        "Truck 이동 배속",
+        min_value=0.5,
+        max_value=10.0,
+        value=1.0,
+        step=0.5,
+        key="truck_speed_slider"
+    )
+
+    store_location_map = {}
+
+    for _, row in stores.iterrows():
+        if (
+            pd.notna(row.get("store_name"))
+            and pd.notna(row.get("latitude"))
+            and pd.notna(row.get("longitude"))
+        ):
+            store_location_map[row["store_name"]] = {
+                "name": row["store_name"],
+                "lat": float(row["latitude"]),
+                "lng": float(row["longitude"]),
+            }
+
+    truck_path = []
+    inventory_change_info = {}
+
+    if highlight_paths:
+        first_path_names = highlight_paths[0]["path_names"]
+
+        for store_name_in_path in first_path_names:
+            if store_name_in_path in store_location_map:
+                truck_path.append(store_location_map[store_name_in_path])
+
+    if not transfer_path_result.empty:
+        transfer_candidates = transfer_path_result[
+            transfer_path_result["recommended_path"] != "이동 비추천"
+        ].copy()
+    else:
+        transfer_candidates = pd.DataFrame()
+
+    if not transfer_candidates.empty:
+        selected_transfer = transfer_candidates.iloc[0]
+
+        selected_product_name = selected_transfer["product_name"]
+        source_store_name = selected_transfer["source_store"]
+        target_store_name = selected_transfer["target_store"]
+
+        try:
+            move_qty = int(selected_transfer["suggested_transfer_qty"])
+        except Exception:
+            move_qty = 0
+
+        store_name_to_id = dict(zip(stores["store_name"], stores["store_id"]))
+        product_name_to_id = dict(zip(products["product_name"], products["product_id"]))
+
+        source_store_id = store_name_to_id.get(source_store_name)
+        target_store_id = store_name_to_id.get(target_store_name)
+        product_id = product_name_to_id.get(selected_product_name)
+
+        def get_current_stock(store_id, product_id_value):
+            if store_id is None or product_id_value is None:
+                return 0
+
+            matched = inventory[
+                (inventory["store_id"] == store_id)
+                & (inventory["product_id"] == product_id_value)
+            ]
+
+            if matched.empty:
+                return 0
+
+            return int(matched.iloc[0]["stock_qty"])
+
+        source_before = get_current_stock(source_store_id, product_id)
+        target_before = get_current_stock(target_store_id, product_id)
+
+        source_after = max(source_before - move_qty, 0)
+        target_after = target_before + move_qty
+
+        store_inventory = {
+            source_store_name: {
+                "role": "보내는 점포",
+                "product_name": selected_product_name,
+                "before": source_before,
+                "after": source_after,
+                "change": -move_qty,
+            },
+            target_store_name: {
+                "role": "받는 점포",
+                "product_name": selected_product_name,
+                "before": target_before,
+                "after": target_after,
+                "change": move_qty,
+            },
+        }
+
+        if selected_transfer["recommended_path"] == "DC 경유 이동 추천":
+            via_dc_name = selected_transfer.get("via_dc", None)
+
+            if via_dc_name:
+                via_dc_id = store_name_to_id.get(via_dc_name)
+                via_before = get_current_stock(via_dc_id, product_id)
+
+                store_inventory[via_dc_name] = {
+                    "role": "경유 DC",
+                    "product_name": selected_product_name,
+                    "before": via_before,
+                    "after": via_before,
+                    "change": 0,
                 }
 
-                st.session_state.cart.append(cart_item)
-                st.success("Inventory 장바구니에 담았습니다.")
+        inventory_change_info = {
+            "product_name": selected_product_name,
+            "move_qty": move_qty,
+            "source_store": source_store_name,
+            "target_store": target_store_name,
+            "recommended_path": selected_transfer["recommended_path"],
+            "store_inventory": store_inventory,
+        }
 
-        # =========================
-        # Inventory 장바구니 목록
-        # =========================
-        st.subheader("🧾 Inventory 장바구니")
+    if show_kakao_map_with_truck is None:
+        st.warning("kakao_map_viewer.py에 show_kakao_map_with_truck 함수가 없습니다.")
 
-        if len(st.session_state.cart) == 0:
-            st.info("장바구니가 비어있습니다.")
-        else:
-            for i, item in enumerate(st.session_state.cart):
-                c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+    elif kakao_js_key and len(truck_path) >= 2:
+        st.info("최적 추천 경로를 기준으로 Truck 이동과 Inventory 변화를 시뮬레이션합니다.")
 
-                with c1:
-                    st.write(
-                        f"**{item['상품명']}** / "
-                        f"{item['보내는 점포']} → {item['받는 점포']}"
-                    )
-                    st.caption(f"추천 이유: {item['추천 이유']}")
+        show_kakao_map_with_truck(
+            stores,
+            routes,
+            kakao_js_key,
+            truck_path,
+            speed_multiplier=truck_speed,
+            inventory_changes=inventory_change_info,
+        )
 
-                with c2:
-                    st.write(f"수량: {item['수량']}개")
+    elif not kakao_js_key:
+        st.info("Truck 이동 시뮬레이션을 보려면 왼쪽 사이드바에 카카오맵 JavaScript 키를 입력하세요.")
+    else:
+        st.info("Truck 이동을 표시할 추천 경로가 없습니다.")
 
-                with c3:
-                    st.write(f"전략: {item['추천 전략']}")
+    # =========================
+    # 상세 분석 결과
+    # =========================
+    st.markdown("---")
+    st.subheader("상세 분석 결과")
 
-                    cost_value = item["예상 비용"]
-                    if isinstance(cost_value, Number):
-                        st.write(f"예상 비용: {cost_value:,.0f}원")
-                    else:
-                        st.write(f"예상 비용: {cost_value}")
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        [
+            "DC-점포",
+            "거리 컷라인",
+            "거래가능시간",
+            "직접 vs DC 경유",
+            "프로모션 비교",
+            "다중 경로",
+        ]
+    )
 
-                with c4:
-                    if st.button("삭제", key=f"delete_cart_{i}"):
-                        st.session_state.cart.pop(i)
-                        st.rerun()
-
-            total_items = len(st.session_state.cart)
-
-            total_cost = sum(
-                item["예상 비용"]
-                for item in st.session_state.cart
-                if isinstance(item["예상 비용"], Number)
-            )
-
-            cart_col1, cart_col2 = st.columns(2)
-
-            cart_col1.metric("담긴 추천 항목 수", f"{total_items}건")
-            cart_col2.metric("총 예상 비용", f"{total_cost:,.0f}원")
-
-            if st.button("장바구니 전체 비우기", key="clear_inventory_cart"):
-                st.session_state.cart = []
-                st.rerun()
-
-        # =========================
-        # 카카오맵 전체 경로
-        # =========================
-        st.markdown("---")
-        st.subheader("카카오맵 기반 점포 및 경로 시각화")
-
-        if kakao_js_key:
-            show_kakao_map(
-                stores,
-                routes,
-                kakao_js_key
-            )
-        else:
-            st.info("카카오맵을 보려면 왼쪽 사이드바에 JavaScript 키를 입력하세요.")
-
-        # =========================
-        # 추천 경로 강조 지도
-        # =========================
-        st.markdown("---")
-        st.subheader("추천 경로 강조 지도")
-
-        highlight_paths = []
-
-        if not transfer_path_result.empty:
-            recommended_transfer_paths = transfer_path_result[
-                transfer_path_result["recommended_path"] != "이동 비추천"
-            ]
-
-            for _, path_row in recommended_transfer_paths.iterrows():
-                if path_row["recommended_path"] == "직접 이동 추천":
-                    path_names = [
-                        path_row["source_store"],
-                        path_row["target_store"],
-                    ]
-
-                elif path_row["recommended_path"] == "DC 경유 이동 추천":
-                    path_names = [
-                        path_row["source_store"],
-                        path_row["via_dc"],
-                        path_row["target_store"],
-                    ]
-
-                else:
-                    continue
-
-                highlight_paths.append(
-                    {
-                        "path_names": path_names,
-                        "label": f"{path_row['product_name']} - {path_row['recommended_path']}",
-                    }
-                )
-
-        if not network_path_result.empty:
-            network_recommended_paths = network_path_result[
-                network_path_result["network_recommendation"] == "다중 경로 추천"
-            ]
-
-            for _, network_row in network_recommended_paths.iterrows():
-                path_names = str(network_row["network_path"]).split(" → ")
-
-                highlight_paths.append(
-                    {
-                        "path_names": path_names,
-                        "label": f"{network_row['product_name']} - 다중 경로 추천",
-                    }
-                )
-
-        if kakao_js_key and highlight_paths:
-            show_kakao_map_with_highlights(
-                stores,
-                routes,
-                kakao_js_key,
-                highlight_paths
-            )
-        elif not kakao_js_key:
-            st.info("추천 경로 지도를 보려면 왼쪽 사이드바에 카카오맵 JavaScript 키를 입력하세요.")
-        else:
-            st.info("강조 표시할 추천 경로가 없습니다.")
-
-        # =========================
-        # DC-점포 분석
-        # =========================
-        st.markdown("---")
+    with tab1:
         st.subheader("DC-점포 거리 및 운송비 계산")
 
         if dc_routes.empty:
@@ -478,73 +842,28 @@ if uploaded_file is not None:
             chart_data = best_dc_by_retailer.set_index("retailer_name")["transport_cost"]
             st.bar_chart(chart_data)
 
-        # =========================
-        # 제품별 거리 컷라인
-        # =========================
-        st.markdown("---")
+    with tab2:
         st.subheader("제품별 거리 컷라인 판별")
 
         if cutline_result is None or cutline_result.empty:
             st.warning("제품별 거리 컷라인 분석 결과가 없습니다.")
         else:
             st.write("제품별 DC-점포 이동 가능 여부")
-            st.dataframe(
-                cutline_result[
-                    [
-                        "dc_name",
-                        "retailer_name",
-                        "product_name",
-                        "category",
-                        "distance_km",
-                        "distance_cutline_km",
-                        "transport_cost",
-                        "cutline_status",
-                    ]
-                ]
-            )
+            st.dataframe(cutline_result)
 
             st.write("제품별/점포별 컷라인 내 최적 DC")
-
             if best_valid_routes.empty:
                 st.warning("거리 컷라인을 만족하는 이동 가능 경로가 없습니다.")
             else:
-                st.dataframe(
-                    best_valid_routes[
-                        [
-                            "store_id",
-                            "product_id",
-                            "product_name",
-                            "category",
-                            "dc_name",
-                            "retailer_name",
-                            "distance_km",
-                            "distance_cutline_km",
-                            "transport_cost",
-                        ]
-                    ]
-                )
+                st.dataframe(best_valid_routes)
 
             st.write("거리 컷라인 때문에 이동 불가능한 품목")
-
             if no_valid_items.empty:
                 st.success("모든 품목이 최소 1개 이상의 이동 가능 경로를 가지고 있습니다.")
             else:
                 st.dataframe(no_valid_items)
 
-            st.write("이동 가능 여부 요약")
-            status_summary = (
-                cutline_result.groupby("cutline_status")
-                .size()
-                .reset_index(name="count")
-            )
-
-            st.dataframe(status_summary)
-            st.bar_chart(status_summary.set_index("cutline_status")["count"])
-
-        # =========================
-        # 거래가능시간
-        # =========================
-        st.markdown("---")
+    with tab3:
         st.subheader("거래가능시간 판별")
 
         if time_error:
@@ -555,110 +874,51 @@ if uploaded_file is not None:
             st.write("거리 컷라인 + 거래가능시간 판별 결과")
             st.dataframe(time_result)
 
-            st.write("최종 이동 가능 여부 요약")
             time_summary = (
                 time_result.groupby("final_status")
                 .size()
                 .reset_index(name="count")
             )
 
+            st.write("최종 이동 가능 여부 요약")
             st.dataframe(time_summary)
             st.bar_chart(time_summary.set_index("final_status")["count"])
 
-            st.write("최종 이동 가능한 경로만 보기")
-            available_routes = time_result[time_result["final_status"] == "가능"]
-
-            if available_routes.empty:
-                st.warning("거리 컷라인과 거래가능시간을 모두 만족하는 경로가 없습니다.")
-            else:
-                st.dataframe(available_routes)
-
-        # =========================
-        # 점포 간 직접 이동 vs DC 경유
-        # =========================
-        st.markdown("---")
+    with tab4:
         st.subheader("점포 간 직접 이동 vs DC 경유 이동 비교")
 
         if transfer_path_result.empty:
             st.warning("점포 간 이동 비교가 가능한 후보가 없습니다.")
-            st.info("조건: 같은 상품을 가진 점포 중, 한 점포는 재고가 많고 판매가 낮으며 다른 점포는 판매량이 더 높아야 합니다.")
         else:
-            st.write("직접 이동과 DC 경유 이동 비교 결과")
             st.dataframe(transfer_path_result)
 
-            st.write("추천 경로 요약")
             path_summary = (
                 transfer_path_result.groupby("recommended_path")
                 .size()
                 .reset_index(name="count")
             )
 
+            st.write("추천 경로 요약")
             st.dataframe(path_summary)
             st.bar_chart(path_summary.set_index("recommended_path")["count"])
 
-            st.write("이동 추천 결과만 보기")
-            recommended_only = transfer_path_result[
-                transfer_path_result["recommended_path"] != "이동 비추천"
-            ]
-
-            if recommended_only.empty:
-                st.warning("조건을 만족하는 이동 추천 경로가 없습니다.")
-            else:
-                st.dataframe(
-                    recommended_only[
-                        [
-                            "product_name",
-                            "source_store",
-                            "target_store",
-                            "suggested_transfer_qty",
-                            "recommended_path",
-                            "recommendation_reason",
-                            "direct_cost",
-                            "via_cost",
-                            "via_dc",
-                        ]
-                    ]
-                )
-
-        # =========================
-        # 프로모션 vs 재배치
-        # =========================
-        st.markdown("---")
+    with tab5:
         st.subheader("프로모션 vs 재배치 비교")
 
         if promotion_result.empty:
             st.warning("프로모션과 비교할 수 있는 이동 후보가 없습니다.")
         else:
-            st.write("프로모션과 재배치 비용 비교 결과")
             st.dataframe(promotion_result)
 
-            st.write("최종 처리 방식 요약")
             promo_summary = (
                 promotion_result.groupby("final_decision")
                 .size()
                 .reset_index(name="count")
             )
 
+            st.write("최종 처리 방식 요약")
             st.dataframe(promo_summary)
             st.bar_chart(promo_summary.set_index("final_decision")["count"])
-
-            st.write("프로모션/재배치 추천 결과")
-            st.dataframe(
-                promotion_result[
-                    [
-                        "product_name",
-                        "source_store",
-                        "target_store",
-                        "suggested_qty",
-                        "recommended_transfer_path",
-                        "transfer_cost",
-                        "promotion_type",
-                        "promotion_net_cost",
-                        "final_decision",
-                        "decision_reason",
-                    ]
-                ]
-            )
 
             with st.expander("프로모션 계산식 보기"):
                 for _, promo_row in promotion_result.iterrows():
@@ -668,10 +928,7 @@ if uploaded_file is not None:
                         f"{promo_row['promotion_formula']}"
                     )
 
-        # =========================
-        # 여러 점포 연결 최저비용 경로
-        # =========================
-        st.markdown("---")
+    with tab6:
         st.subheader("여러 점포 연결 최저비용 경로 계산")
 
         if network_error:
@@ -679,151 +936,28 @@ if uploaded_file is not None:
         elif network_path_result.empty:
             st.warning("계산 가능한 다중 연결 경로가 없습니다.")
         else:
-            st.write("다중 연결 경로 계산 결과")
             st.dataframe(network_path_result)
 
-            st.write("다중 경로 추천 요약")
             network_summary = (
                 network_path_result.groupby("network_recommendation")
                 .size()
                 .reset_index(name="count")
             )
 
+            st.write("다중 경로 추천 요약")
             st.dataframe(network_summary)
             st.bar_chart(network_summary.set_index("network_recommendation")["count"])
 
-            st.write("다중 경로 추천 결과만 보기")
-            network_recommended_only = network_path_result[
-                network_path_result["network_recommendation"] == "다중 경로 추천"
-            ]
-
-            if network_recommended_only.empty:
-                st.info("기존 직접 이동 또는 DC 경유 방식이 더 적합합니다.")
-            else:
-                st.dataframe(
-                    network_recommended_only[
-                        [
-                            "product_name",
-                            "source_store",
-                            "target_store",
-                            "network_path",
-                            "network_distance_km",
-                            "network_time_min",
-                            "network_cost",
-                            "arrival_time",
-                            "reason",
-                        ]
-                    ]
-                )
-
 
 # =========================
-# 단일 상품 직접 계산
+# 실행 분기
 # =========================
-st.markdown("---")
-st.subheader("단일 상품 직접 계산")
-
-if st.button("계산 시작"):
-    result = calculate_inventory_analysis(
-        stock_qty=stock_qty,
-        sales_30d=sales_30d,
-        inbound_days=inbound_days,
-        unit_cost=unit_cost,
-        daily_holding_cost=daily_holding_cost,
-        discount_rate=discount_rate,
-        expected_sales_increase_rate=expected_sales_increase_rate,
-        transfer_possible=(transfer_possible == "가능"),
-        distance_km=distance_km,
-        cost_per_km=cost_per_km,
-        target_store_sales_30d=target_store_sales_30d,
-        disposal_cost_per_unit=disposal_cost_per_unit,
-    )
-
-    discount_comparison = analyze_discount_options(
-        stock_qty=stock_qty,
-        sales_30d=sales_30d,
-        unit_cost=unit_cost,
-        daily_holding_cost=daily_holding_cost,
-        discount_rates=[10, 20, 30, 40],
-        expected_sales_increase_rate=expected_sales_increase_rate,
-    )
-
-    st.success("계산이 완료되었습니다.")
-
-    st.subheader("입력 정보")
-    st.write(f"점포명: {store_name}")
-    st.write(f"상품명: {product_name}")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.metric("재고소진 예상일수", f"{result['stock_cover_days']}일")
-    col2.metric("위험점수", f"{result['risk_score']}점")
-    col3.metric("악성재고 여부", "예" if result["is_bad_stock"] else "아니오")
-
-    st.subheader("판단 이유")
-
-    if result["reasons"]:
-        for reason in result["reasons"]:
-            st.write(f"- {reason}")
-    else:
-        st.write("위험 요소가 크지 않습니다.")
-
-    st.subheader("비용 비교")
-
-    st.write(f"유지 비용: {result['keep_cost']}원")
-    st.write(f"할인 전략 순비용: {result['discount_net_cost']}원")
-    st.write(f"폐기 비용: {result['disposal_cost']}원")
-
-    if result["transfer_net_cost"] is not None:
-        st.write(f"자동 계산된 이동비: {result['transfer_cost']}원")
-        st.write(f"타점포 이동 순비용: {result['transfer_net_cost']}원")
-
-        cost_data = {
-            "전략": ["유지", "할인", "타점포 이동", "폐기"],
-            "비용": [
-                result["keep_cost"],
-                result["discount_net_cost"],
-                result["transfer_net_cost"],
-                result["disposal_cost"],
-            ],
-        }
-
-    else:
-        st.write("타점포 이동 순비용: 이동 불가능")
-
-        cost_data = {
-            "전략": ["유지", "할인", "폐기"],
-            "비용": [
-                result["keep_cost"],
-                result["discount_net_cost"],
-                result["disposal_cost"],
-            ],
-        }
-
-    st.bar_chart(data=cost_data, x="전략", y="비용")
-
-    st.subheader("최종 추천")
-    st.write(f"추천 전략: **{result['best_action']}**")
-    st.write(f"추천 이유: {result['recommendation_reason']}")
-    st.write(f"발주 조언: **{result['order_advice']}**")
-
-    st.subheader("할인율별 비교")
-    st.dataframe(discount_comparison)
-
-    discount_chart_data = {
-        "할인율": [f"{item['discount_rate']}%" for item in discount_comparison],
-        "순비용": [item["net_cost"] for item in discount_comparison],
-    }
-
-    st.bar_chart(discount_chart_data, x="할인율", y="순비용")
-
-    st.subheader("계산 방식")
-    st.write(result["formula_text"]["stock_cover_days_formula"])
-    st.write(result["formula_text"]["risk_formula"])
-    st.write(result["formula_text"]["keep_cost_formula"])
-    st.write(result["formula_text"]["discount_formula"])
-    st.write(result["formula_text"]["transfer_formula"])
-    st.write(result["formula_text"]["disposal_formula"])
+if st.session_state.selected_mode is None:
+    show_mode_selector()
+elif st.session_state.selected_mode == "single":
+    show_single_calculator()
+elif st.session_state.selected_mode == "excel":
+    show_excel_optimizer()
 
 
 st.markdown("---")
