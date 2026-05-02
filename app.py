@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import html as html_lib
 from datetime import time
 from numbers import Number
 
@@ -20,6 +21,12 @@ try:
     from kakao_map_viewer import show_kakao_map_with_truck
 except ImportError:
     show_kakao_map_with_truck = None
+
+try:
+    from heuristic_optimizer import add_heuristic_scores, select_greedy_best_candidate
+except ImportError:
+    add_heuristic_scores = None
+    select_greedy_best_candidate = None
 
 
 # =========================
@@ -127,7 +134,6 @@ def apply_global_style():
                 background: #ffffff;
                 box-shadow: 0 10px 28px rgba(0,0,0,0.055);
                 min-height: 340px;
-                transition: 0.2s ease;
                 margin-bottom: 12px;
             }
 
@@ -335,6 +341,17 @@ def apply_global_style():
                 color: #444;
             }
 
+            .algorithm-box {
+                padding: 18px 20px;
+                border-radius: 20px;
+                background: linear-gradient(135deg, #eef7ff, #ffffff);
+                border: 1px solid #a5d8ff;
+                margin-top: 14px;
+                margin-bottom: 16px;
+                line-height: 1.7;
+                color: #333;
+            }
+
             .mini-guide {
                 padding: 18px 20px;
                 border-radius: 20px;
@@ -399,8 +416,12 @@ if "cart" not in st.session_state:
 
 
 # =========================
-# 공통 UI
+# 공통 함수
 # =========================
+def escape_text(value):
+    return html_lib.escape(str(value))
+
+
 def format_money(value):
     if isinstance(value, Number):
         return f"{value:,.0f}원"
@@ -412,72 +433,119 @@ def format_money(value):
         return str(value)
 
 
-def get_best_recommendation(final_recommendations):
-    if final_recommendations.empty:
-        return None
+def apply_heuristic_and_greedy(final_recommendations):
+    if final_recommendations is None or final_recommendations.empty:
+        return final_recommendations, None
 
-    temp = final_recommendations.copy()
-    temp["_cost_numeric"] = pd.to_numeric(temp["estimated_cost"], errors="coerce")
+    if add_heuristic_scores is None or select_greedy_best_candidate is None:
+        temp = final_recommendations.copy()
+        temp["_estimated_cost_numeric"] = pd.to_numeric(temp["estimated_cost"], errors="coerce")
 
-    if temp["_cost_numeric"].notna().any():
-        temp = temp.sort_values("_cost_numeric", ascending=True)
-        return temp.iloc[0]
+        if temp["_estimated_cost_numeric"].notna().any():
+            temp = temp.sort_values("_estimated_cost_numeric", ascending=True).reset_index(drop=True)
 
-    return temp.iloc[0]
+        temp["greedy_rank"] = temp.index + 1
+        temp["is_greedy_selected"] = temp["greedy_rank"] == 1
+        return temp, temp.iloc[0]
+
+    scored = add_heuristic_scores(final_recommendations)
+    greedy_best = select_greedy_best_candidate(scored)
+
+    return scored, greedy_best
 
 
-def render_best_recommendation(final_recommendations):
-    best_row = get_best_recommendation(final_recommendations)
-
-    if best_row is None:
+def render_best_recommendation(greedy_best_candidate):
+    if greedy_best_candidate is None:
         return
 
-    product_name = best_row.get("product_name", "-")
-    source_store = best_row.get("source_store", "-")
-    target_store = best_row.get("target_store", "-")
-    suggested_qty = best_row.get("suggested_qty", "-")
-    final_recommendation = best_row.get("final_recommendation", "-")
-    estimated_cost = best_row.get("estimated_cost", "-")
-    reason = best_row.get("reason", "-")
+    product_name = escape_text(greedy_best_candidate.get("product_name", "-"))
+    source_store = escape_text(greedy_best_candidate.get("source_store", "-"))
+    target_store = escape_text(greedy_best_candidate.get("target_store", "-"))
+    suggested_qty = escape_text(greedy_best_candidate.get("suggested_qty", "-"))
+    final_recommendation = escape_text(greedy_best_candidate.get("final_recommendation", "-"))
+    estimated_cost = greedy_best_candidate.get("estimated_cost", "-")
+    reason = escape_text(greedy_best_candidate.get("reason", "-"))
+
+    heuristic_score = greedy_best_candidate.get("heuristic_score", "-")
+    heuristic_grade = greedy_best_candidate.get("heuristic_grade", "-")
 
     html = (
         '<div class="best-card">'
-        '<div class="best-title">✅ 최적 추천 대표 경로</div>'
-
+        '<div class="best-title">✅ Greedy 기반 최적 추천 경로</div>'
         '<div class="best-grid">'
-
         '<div class="best-mini">'
         '<div class="best-label">상품명</div>'
         f'<div class="best-value">{product_name}</div>'
         '</div>'
-
         '<div class="best-mini">'
         '<div class="best-label">추천 경로</div>'
         f'<div class="best-value">{source_store} → {target_store}</div>'
         '</div>'
-
         '<div class="best-mini">'
         '<div class="best-label">추천 수량</div>'
         f'<div class="best-value">{suggested_qty}개</div>'
         '</div>'
-
         '<div class="best-mini">'
         '<div class="best-label">예상 비용</div>'
         f'<div class="best-value">{format_money(estimated_cost)}</div>'
         '</div>'
-
         '</div>'
-
         '<div class="best-reason">'
         f'<b>추천 전략:</b> {final_recommendation}<br>'
+        f'<b>휴리스틱 점수:</b> {heuristic_score}점 / {heuristic_grade}<br>'
         f'<b>추천 이유:</b> {reason}<br>'
-        '<b>설명:</b> 이 대표 경로는 최종 추천 목록 중 예상 비용이 가장 낮은 경로를 기준으로 표시됩니다.'
+        '<b>Greedy 선택 근거:</b> 휴리스틱 점수가 가장 높은 후보를 현재 조건의 최적 추천으로 선택했습니다.'
         '</div>'
-
         '</div>'
     )
 
     st.markdown(html, unsafe_allow_html=True)
+
+
+def show_algorithm_explanation():
+    st.markdown(
+        """
+        <div class="algorithm-box">
+            <b>알고리즘 구조</b><br>
+            1. 기존 악성재고 위험점수는 상품이 악성재고인지 판단하는 데 사용합니다.<br>
+            2. 추천 후보에는 별도의 휴리스틱 점수를 부여합니다. 이 점수는 비용, 이동 수량, 추천 전략, 추천 이유를 반영합니다.<br>
+            3. Greedy 알고리즘은 현재 후보 중 휴리스틱 점수가 가장 높은 후보를 최적 추천 경로로 선택합니다.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def get_matching_transfer_row(transfer_path_result, greedy_best_candidate):
+    if (
+        transfer_path_result is None
+        or transfer_path_result.empty
+        or greedy_best_candidate is None
+    ):
+        return None
+
+    product_name = greedy_best_candidate.get("product_name", None)
+    source_store = greedy_best_candidate.get("source_store", None)
+    target_store = greedy_best_candidate.get("target_store", None)
+
+    matched = transfer_path_result[
+        (transfer_path_result["product_name"] == product_name)
+        & (transfer_path_result["source_store"] == source_store)
+        & (transfer_path_result["target_store"] == target_store)
+        & (transfer_path_result["recommended_path"] != "이동 비추천")
+    ]
+
+    if not matched.empty:
+        return matched.iloc[0]
+
+    candidates = transfer_path_result[
+        transfer_path_result["recommended_path"] != "이동 비추천"
+    ]
+
+    if not candidates.empty:
+        return candidates.iloc[0]
+
+    return None
 
 
 def show_main_hero():
@@ -491,8 +559,8 @@ def show_main_hero():
             </p>
             <div style="margin-top:20px;">
                 <span class="badge">악성재고 판단</span>
-                <span class="badge">최적 재배치</span>
-                <span class="badge blue-badge">카카오맵 시각화</span>
+                <span class="badge">휴리스틱 점수</span>
+                <span class="badge blue-badge">Greedy 선택</span>
                 <span class="badge green-badge">Inventory 변화</span>
                 <span class="badge pink-badge">Truck 시뮬레이션</span>
             </div>
@@ -515,16 +583,16 @@ def show_workflow():
             </div>
             <div class="workflow-card">
                 <div class="workflow-number">2</div>
-                <div class="workflow-title">의사결정 분석</div>
+                <div class="workflow-title">후보 평가</div>
                 <div class="workflow-text">
-                    유지, 할인, 폐기, 점포 이동, DC 경유, 다중 경로를 비교해 최적 처리 방식을 추천합니다.
+                    기존 위험점수는 악성재고를 판단하고, 휴리스틱 점수는 추천 후보의 우선순위를 평가합니다.
                 </div>
             </div>
             <div class="workflow-card">
                 <div class="workflow-number">3</div>
-                <div class="workflow-title">지도·재고 시각화</div>
+                <div class="workflow-title">Greedy 선택</div>
                 <div class="workflow-text">
-                    추천 경로를 지도에 표시하고, Truck 이동 후 점포별 Inventory 변화를 대시보드로 확인합니다.
+                    휴리스틱 점수가 가장 높은 후보를 선택하고, 지도와 Inventory 변화로 결과를 확인합니다.
                 </div>
             </div>
         </div>
@@ -563,24 +631,24 @@ def show_excel_feature_cards():
         """
         <div class="feature-grid">
             <div class="feature-card">
-                <div class="feature-icon">🧭</div>
-                <div class="feature-title">최적 경로 추천</div>
-                <div class="feature-desc">직접 이동, DC 경유, 다중 경로를 비교해 더 효율적인 이동 방식을 찾습니다.</div>
+                <div class="feature-icon">🧠</div>
+                <div class="feature-title">휴리스틱 점수</div>
+                <div class="feature-desc">비용, 이동 수량, 전략 유형, 추천 이유를 반영해 후보를 점수화합니다.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">Greedy 선택</div>
+                <div class="feature-desc">현재 조건에서 휴리스틱 점수가 가장 높은 후보를 최적 경로로 선택합니다.</div>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🚚</div>
                 <div class="feature-title">Truck 시뮬레이션</div>
-                <div class="feature-desc">추천 경로를 따라 Truck이 이동하는 모습을 카카오맵 위에서 확인합니다.</div>
+                <div class="feature-desc">선택된 추천 경로를 따라 Truck 이동을 카카오맵 위에서 확인합니다.</div>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📦</div>
                 <div class="feature-title">Inventory 변화</div>
-                <div class="feature-desc">보내는 점포와 받는 점포의 이동 전후 재고 변화를 카드와 그래프로 보여줍니다.</div>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🎁</div>
-                <div class="feature-title">프로모션 비교</div>
-                <div class="feature-desc">재배치 비용과 할인/1+1 프로모션 비용을 비교해 처리 전략을 추천합니다.</div>
+                <div class="feature-desc">보내는 점포와 받는 점포의 이동 전후 재고 변화를 보여줍니다.</div>
             </div>
         </div>
         """,
@@ -614,7 +682,7 @@ def show_mode_selector():
                     <li>발표에서 기본 구조를 시연할 때</li>
                 </ul>
                 <div class="mode-mini">
-                    입력값을 바꾸면 비용 비교와 추천 전략이 어떻게 달라지는지 확인할 수 있습니다.
+                    현재 점수제도는 악성재고 위험을 판단하는 데 사용됩니다.
                 </div>
             </div>
             """,
@@ -632,7 +700,7 @@ def show_mode_selector():
                 <h3>📊 엑셀 기반 최적 경로 추천</h3>
                 <p>
                 여러 점포, 상품, 재고, 경로 데이터를 엑셀로 업로드하여
-                최적 재배치 경로와 처리 전략을 종합 분석합니다.
+                휴리스틱 점수와 Greedy 알고리즘으로 최적 재배치 경로를 추천합니다.
                 </p>
                 <p><b>추천 상황</b></p>
                 <ul>
@@ -641,7 +709,7 @@ def show_mode_selector():
                     <li>지도와 Truck 이동을 시각화할 때</li>
                 </ul>
                 <div class="mode-mini">
-                    최종 추천, 지도 시각화, Inventory 변화 대시보드까지 한 번에 확인합니다.
+                    휴리스틱 점수로 후보를 평가하고 Greedy 알고리즘으로 최적 후보를 선택합니다.
                 </div>
             </div>
             """,
@@ -654,17 +722,6 @@ def show_mode_selector():
 
     show_workflow()
 
-    st.markdown(
-        """
-        <div class="mini-guide">
-            <b>추천 사용 순서</b><br>
-            처음에는 <b>개별 입력 계산</b>으로 악성재고 판단 원리를 확인하고,
-            이후 <b>엑셀 기반 최적 경로 추천</b>으로 여러 점포 분석과 Truck 시뮬레이션을 확인하는 흐름을 추천합니다.
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
 
 # =========================
 # 1. 개별 입력 계산 모드
@@ -675,7 +732,7 @@ def show_single_calculator():
     show_mode_header(
         "🧮 개별 입력 기반 악성재고 계산",
         "단일 점포와 단일 상품을 기준으로 악성재고 여부, 비용 비교, 최종 처리 전략을 계산합니다.",
-        ["단일 상품", "직접 입력", "비용 비교", "계산식 확인"]
+        ["기존 점수제도 유지", "악성재고 위험 판단", "비용 비교", "계산식 확인"]
     )
 
     st.sidebar.header("개별 입력값 설정")
@@ -835,11 +892,17 @@ def show_excel_optimizer():
 
     show_mode_header(
         "📊 엑셀 기반 최적 경로 추천",
-        "여러 점포, 상품, 재고, 경로 데이터를 기반으로 최적 재배치와 Truck 이동을 분석합니다.",
-        ["엑셀 업로드", "최적 경로", "카카오맵", "Truck 시뮬레이션", "Inventory 변화"]
+        "여러 점포, 상품, 재고, 경로 데이터를 기반으로 휴리스틱 점수와 Greedy 알고리즘을 적용합니다.",
+        ["엑셀 업로드", "휴리스틱 점수", "Greedy 알고리즘", "Truck 시뮬레이션", "Inventory 변화"]
     )
 
     show_excel_feature_cards()
+
+    if add_heuristic_scores is None or select_greedy_best_candidate is None:
+        st.warning(
+            "heuristic_optimizer.py 파일을 찾지 못했습니다. "
+            "앱은 실행되지만 휴리스틱 점수 기능은 제한됩니다."
+        )
 
     st.sidebar.header("지도 설정")
 
@@ -1011,6 +1074,15 @@ def show_excel_optimizer():
         network_path_result
     )
 
+    final_recommendations, greedy_best_candidate = apply_heuristic_and_greedy(
+        final_recommendations
+    )
+
+    greedy_transfer_row = get_matching_transfer_row(
+        transfer_path_result,
+        greedy_best_candidate
+    )
+
     # =========================
     # 최종 추천
     # =========================
@@ -1020,7 +1092,9 @@ def show_excel_optimizer():
     if final_recommendations.empty:
         st.info("최종 추천으로 정리할 결과가 없습니다.")
     else:
-        render_best_recommendation(final_recommendations)
+        render_best_recommendation(greedy_best_candidate)
+
+        show_algorithm_explanation()
 
         summary_col1, summary_col2 = st.columns(2)
 
@@ -1028,7 +1102,7 @@ def show_excel_optimizer():
         summary_col2.metric("추천 유형 수", f"{len(final_rec_summary)}개")
 
         st.write("추천 유형 요약")
-        st.dataframe(final_rec_summary)
+        st.dataframe(final_rec_summary, use_container_width=True)
 
         st.bar_chart(
             final_rec_summary.set_index("final_recommendation")["count"]
@@ -1046,8 +1120,43 @@ def show_excel_optimizer():
                     "estimated_cost",
                     "reason",
                 ]
-            ]
+            ],
+            use_container_width=True
         )
+
+        if "heuristic_score" in final_recommendations.columns:
+            st.markdown("---")
+            st.subheader("🧠 휴리스틱 점수 + Greedy 선택 결과")
+
+            heuristic_view = final_recommendations[
+                [
+                    "greedy_rank",
+                    "product_name",
+                    "source_store",
+                    "target_store",
+                    "suggested_qty",
+                    "estimated_cost",
+                    "final_recommendation",
+                    "heuristic_score",
+                    "heuristic_grade",
+                    "greedy_reason",
+                ]
+            ].rename(
+                columns={
+                    "greedy_rank": "Greedy 순위",
+                    "product_name": "상품명",
+                    "source_store": "보내는 점포",
+                    "target_store": "받는 점포",
+                    "suggested_qty": "추천 수량",
+                    "estimated_cost": "예상 비용",
+                    "final_recommendation": "추천 전략",
+                    "heuristic_score": "휴리스틱 점수",
+                    "heuristic_grade": "휴리스틱 등급",
+                    "greedy_reason": "Greedy 선택 근거",
+                }
+            )
+
+            st.dataframe(heuristic_view, use_container_width=True)
 
         st.subheader("🧺 Inventory 장바구니 담기")
 
@@ -1157,12 +1266,49 @@ def show_excel_optimizer():
 
     highlight_paths = []
 
+    if greedy_transfer_row is not None:
+        if greedy_transfer_row["recommended_path"] == "직접 이동 추천":
+            best_path_names = [
+                greedy_transfer_row["source_store"],
+                greedy_transfer_row["target_store"],
+            ]
+
+        elif greedy_transfer_row["recommended_path"] == "DC 경유 이동 추천":
+            best_path_names = [
+                greedy_transfer_row["source_store"],
+                greedy_transfer_row["via_dc"],
+                greedy_transfer_row["target_store"],
+            ]
+
+        else:
+            best_path_names = [
+                greedy_transfer_row["source_store"],
+                greedy_transfer_row["target_store"],
+            ]
+
+        highlight_paths.append(
+            {
+                "path_names": best_path_names,
+                "label": f"{greedy_transfer_row['product_name']} - Greedy 최적 추천",
+            }
+        )
+
     if not transfer_path_result.empty:
         recommended_transfer_paths = transfer_path_result[
             transfer_path_result["recommended_path"] != "이동 비추천"
         ]
 
         for _, path_row in recommended_transfer_paths.iterrows():
+            if greedy_transfer_row is not None:
+                same_candidate = (
+                    path_row["product_name"] == greedy_transfer_row["product_name"]
+                    and path_row["source_store"] == greedy_transfer_row["source_store"]
+                    and path_row["target_store"] == greedy_transfer_row["target_store"]
+                )
+
+                if same_candidate:
+                    continue
+
             if path_row["recommended_path"] == "직접 이동 추천":
                 path_names = [
                     path_row["source_store"],
@@ -1254,16 +1400,9 @@ def show_excel_optimizer():
             if store_name_in_path in store_location_map:
                 truck_path.append(store_location_map[store_name_in_path])
 
-    if not transfer_path_result.empty:
-        transfer_candidates = transfer_path_result[
-            transfer_path_result["recommended_path"] != "이동 비추천"
-        ].copy()
-    else:
-        transfer_candidates = pd.DataFrame()
+    selected_transfer = greedy_transfer_row
 
-    if not transfer_candidates.empty:
-        selected_transfer = transfer_candidates.iloc[0]
-
+    if selected_transfer is not None:
         selected_product_name = selected_transfer["product_name"]
         source_store_name = selected_transfer["source_store"]
         target_store_name = selected_transfer["target_store"]
@@ -1345,7 +1484,7 @@ def show_excel_optimizer():
         st.warning("kakao_map_viewer.py에 show_kakao_map_with_truck 함수가 없습니다.")
 
     elif kakao_js_key and len(truck_path) >= 2:
-        st.info("최적 추천 경로를 기준으로 Truck 이동과 Inventory 변화를 시뮬레이션합니다.")
+        st.info("Greedy 알고리즘이 선택한 최적 추천 경로를 기준으로 Truck 이동과 Inventory 변화를 시뮬레이션합니다.")
 
         show_kakao_map_with_truck(
             stores,
@@ -1516,3 +1655,12 @@ elif st.session_state.selected_mode == "excel":
     show_excel_optimizer()
 
 
+st.markdown("---")
+st.markdown(
+    """
+    <div class="footer-note">
+        © 2026 김서호. All rights reserved. | Varo 편의점 재고 공유 및 최적 의사결정 시스템
+    </div>
+    """,
+    unsafe_allow_html=True
+)
