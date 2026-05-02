@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import time
+from numbers import Number
 
 from calculator import calculate_inventory_analysis
 from discount_analyzer import analyze_discount_options
@@ -14,10 +15,24 @@ from kakao_map_viewer import show_kakao_map, show_kakao_map_with_highlights
 from final_summary import build_final_recommendations
 
 
-st.set_page_config(page_title="편의점 악성재고 계산기", layout="wide")
+# =========================
+# 기본 설정
+# =========================
+st.set_page_config(
+    page_title="Varo",
+    page_icon="📦",
+    layout="wide"
+)
 
-st.title("편의점 악성재고 처리 의사결정 프로그램")
-st.write("엑셀 데이터를 기반으로 악성재고, 재배치, 프로모션, 이동 경로를 분석합니다.")
+st.title("📦 Varo")
+st.write("편의점 재고 공유 및 최적 의사결정 시스템")
+
+
+# =========================
+# Inventory 장바구니 상태 저장
+# =========================
+if "cart" not in st.session_state:
+    st.session_state.cart = []
 
 
 # =========================
@@ -45,8 +60,18 @@ unit_cost = st.sidebar.number_input("상품 1개당 원가(원)", min_value=0, v
 daily_holding_cost = st.sidebar.number_input("하루 보관비(원)", min_value=0, value=20)
 disposal_cost_per_unit = st.sidebar.number_input("상품 1개당 폐기비용(원)", min_value=0, value=300)
 
-discount_rate = st.sidebar.number_input("할인율(%)", min_value=0.0, max_value=100.0, value=20.0)
-expected_sales_increase_rate = st.sidebar.number_input("할인 시 판매 증가율(%)", min_value=0.0, value=50.0)
+discount_rate = st.sidebar.number_input(
+    "할인율(%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=20.0
+)
+
+expected_sales_increase_rate = st.sidebar.number_input(
+    "할인 시 판매 증가율(%)",
+    min_value=0.0,
+    value=50.0
+)
 
 transfer_possible = st.sidebar.selectbox("타점포 이동 가능 여부", ["가능", "불가능"])
 distance_km = st.sidebar.number_input("점포 간 거리(km)", min_value=0.0, value=10.0)
@@ -64,6 +89,7 @@ uploaded_file = st.file_uploader(
     "편의점 재고 데이터 엑셀 파일을 업로드하세요",
     type=["xlsx"]
 )
+
 
 if uploaded_file is not None:
     excel_data, missing_sheets = load_excel_file(uploaded_file)
@@ -110,7 +136,7 @@ if uploaded_file is not None:
             st.dataframe(routes)
 
         # =========================
-        # 분석 조건
+        # 분석 조건 설정
         # =========================
         st.markdown("---")
         st.subheader("분석 조건 설정")
@@ -168,7 +194,7 @@ if uploaded_file is not None:
         )
 
         # =========================
-        # 2. 제품별 거리 컷라인 계산 + 거래가능시간 계산
+        # 2. 제품별 거리 컷라인 + 거래가능시간
         # =========================
         if dc_routes.empty:
             cutline_result = None
@@ -237,6 +263,7 @@ if uploaded_file is not None:
 
         if final_recommendations.empty:
             st.info("최종 추천으로 정리할 결과가 없습니다.")
+
         else:
             summary_col1, summary_col2 = st.columns(2)
 
@@ -265,8 +292,96 @@ if uploaded_file is not None:
                 ]
             )
 
+            # =========================
+            # Inventory 장바구니 담기
+            # =========================
+            st.markdown("---")
+            st.subheader("🧺 Inventory 장바구니 담기")
+
+            final_recommendations_view = final_recommendations.reset_index(drop=True)
+
+            selected_index = st.selectbox(
+                "장바구니에 담을 추천 항목 선택",
+                final_recommendations_view.index,
+                format_func=lambda i: (
+                    f"{final_recommendations_view.loc[i, 'product_name']} | "
+                    f"{final_recommendations_view.loc[i, 'source_store']} → "
+                    f"{final_recommendations_view.loc[i, 'target_store']} | "
+                    f"{final_recommendations_view.loc[i, 'final_recommendation']}"
+                ),
+                key="cart_select_recommendation"
+            )
+
+            if st.button("🛒 Inventory에 담기", key="add_to_inventory_cart"):
+                selected_row = final_recommendations_view.loc[selected_index]
+
+                cart_item = {
+                    "상품명": selected_row["product_name"],
+                    "보내는 점포": selected_row["source_store"],
+                    "받는 점포": selected_row["target_store"],
+                    "수량": selected_row["suggested_qty"],
+                    "추천 전략": selected_row["final_recommendation"],
+                    "예상 비용": selected_row["estimated_cost"],
+                    "추천 이유": selected_row["reason"],
+                }
+
+                st.session_state.cart.append(cart_item)
+                st.success("Inventory 장바구니에 담았습니다.")
+
         # =========================
-        # 지도
+        # Inventory 장바구니 목록
+        # =========================
+        st.subheader("🧾 Inventory 장바구니")
+
+        if len(st.session_state.cart) == 0:
+            st.info("장바구니가 비어있습니다.")
+        else:
+            for i, item in enumerate(st.session_state.cart):
+                c1, c2, c3, c4 = st.columns([4, 2, 2, 1])
+
+                with c1:
+                    st.write(
+                        f"**{item['상품명']}** / "
+                        f"{item['보내는 점포']} → {item['받는 점포']}"
+                    )
+                    st.caption(f"추천 이유: {item['추천 이유']}")
+
+                with c2:
+                    st.write(f"수량: {item['수량']}개")
+
+                with c3:
+                    st.write(f"전략: {item['추천 전략']}")
+
+                    cost_value = item["예상 비용"]
+                    if isinstance(cost_value, Number):
+                        st.write(f"예상 비용: {cost_value:,.0f}원")
+                    else:
+                        st.write(f"예상 비용: {cost_value}")
+
+                with c4:
+                    if st.button("삭제", key=f"delete_cart_{i}"):
+                        st.session_state.cart.pop(i)
+                        st.rerun()
+
+            total_items = len(st.session_state.cart)
+
+            total_cost = sum(
+                item["예상 비용"]
+                for item in st.session_state.cart
+                if isinstance(item["예상 비용"], Number)
+            )
+
+            cart_col1, cart_col2 = st.columns(2)
+
+            cart_col1.metric("담긴 추천 항목 수", f"{total_items}건")
+            cart_col2.metric("총 예상 비용", f"{total_cost:,.0f}원")
+
+            if st.button("장바구니 전체 비우기", key="clear_inventory_cart"):
+                st.session_state.cart = []
+                st.rerun()
+
+        # =========================
+        # 카카오맵 전체 경로
         # =========================
         st.markdown("---")
         st.subheader("카카오맵 기반 점포 및 경로 시각화")
