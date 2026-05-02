@@ -48,6 +48,21 @@ def apply_global_style():
                 border-right: 1px solid #f1e4a8;
             }
 
+            .stButton > button {
+                border-radius: 14px;
+                border: 1px solid #ffd43b;
+                background: linear-gradient(135deg, #fff3bf, #ffd43b);
+                color: #222;
+                font-weight: 800;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            }
+
+            .stButton > button:hover {
+                border: 1px solid #fab005;
+                background: linear-gradient(135deg, #ffe066, #fcc419);
+                color: #111;
+            }
+
             .main-hero {
                 padding: 42px 44px;
                 border-radius: 32px;
@@ -265,13 +280,59 @@ def apply_global_style():
                 margin-bottom: 18px;
             }
 
-            .soft-card {
-                padding: 18px 20px;
-                border-radius: 20px;
-                background: linear-gradient(135deg, #fffbea, #ffffff);
-                border: 1px solid #f4e7a1;
-                margin-top: 14px;
+            .best-card {
+                padding: 26px 30px;
+                border-radius: 26px;
+                background:
+                    radial-gradient(circle at top right, rgba(255, 212, 59, 0.34), transparent 32%),
+                    linear-gradient(135deg, #fffbea 0%, #fff3bf 48%, #ffffff 100%);
+                border: 2px solid #ffd43b;
+                box-shadow: 0 10px 28px rgba(0,0,0,0.07);
+                margin-top: 16px;
+                margin-bottom: 22px;
+            }
+
+            .best-title {
+                font-size: 25px;
+                font-weight: 900;
                 margin-bottom: 14px;
+                color: #222;
+            }
+
+            .best-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 14px;
+                margin-top: 12px;
+                margin-bottom: 16px;
+            }
+
+            .best-mini {
+                padding: 14px;
+                border-radius: 18px;
+                background: rgba(255,255,255,0.78);
+                border: 1px solid rgba(255,255,255,0.9);
+            }
+
+            .best-label {
+                color: #666;
+                font-size: 13px;
+                margin-bottom: 5px;
+            }
+
+            .best-value {
+                font-size: 18px;
+                font-weight: 900;
+                color: #222;
+            }
+
+            .best-reason {
+                padding: 16px 18px;
+                border-radius: 18px;
+                background: rgba(255,255,255,0.84);
+                border: 1px solid rgba(255,255,255,0.95);
+                line-height: 1.7;
+                color: #444;
             }
 
             .mini-guide {
@@ -310,6 +371,10 @@ def apply_global_style():
                     grid-template-columns: 1fr 1fr;
                 }
 
+                .best-grid {
+                    grid-template-columns: 1fr 1fr;
+                }
+
                 .main-hero h1 {
                     font-size: 40px;
                 }
@@ -336,6 +401,85 @@ if "cart" not in st.session_state:
 # =========================
 # 공통 UI
 # =========================
+def format_money(value):
+    if isinstance(value, Number):
+        return f"{value:,.0f}원"
+
+    try:
+        numeric_value = float(value)
+        return f"{numeric_value:,.0f}원"
+    except Exception:
+        return str(value)
+
+
+def get_best_recommendation(final_recommendations):
+    if final_recommendations.empty:
+        return None
+
+    temp = final_recommendations.copy()
+    temp["_cost_numeric"] = pd.to_numeric(temp["estimated_cost"], errors="coerce")
+
+    if temp["_cost_numeric"].notna().any():
+        temp = temp.sort_values("_cost_numeric", ascending=True)
+        return temp.iloc[0]
+
+    return temp.iloc[0]
+
+
+def render_best_recommendation(final_recommendations):
+    best_row = get_best_recommendation(final_recommendations)
+
+    if best_row is None:
+        return
+
+    product_name = best_row.get("product_name", "-")
+    source_store = best_row.get("source_store", "-")
+    target_store = best_row.get("target_store", "-")
+    suggested_qty = best_row.get("suggested_qty", "-")
+    final_recommendation = best_row.get("final_recommendation", "-")
+    estimated_cost = best_row.get("estimated_cost", "-")
+    reason = best_row.get("reason", "-")
+
+    html = (
+        '<div class="best-card">'
+        '<div class="best-title">✅ 최적 추천 대표 경로</div>'
+
+        '<div class="best-grid">'
+
+        '<div class="best-mini">'
+        '<div class="best-label">상품명</div>'
+        f'<div class="best-value">{product_name}</div>'
+        '</div>'
+
+        '<div class="best-mini">'
+        '<div class="best-label">추천 경로</div>'
+        f'<div class="best-value">{source_store} → {target_store}</div>'
+        '</div>'
+
+        '<div class="best-mini">'
+        '<div class="best-label">추천 수량</div>'
+        f'<div class="best-value">{suggested_qty}개</div>'
+        '</div>'
+
+        '<div class="best-mini">'
+        '<div class="best-label">예상 비용</div>'
+        f'<div class="best-value">{format_money(estimated_cost)}</div>'
+        '</div>'
+
+        '</div>'
+
+        '<div class="best-reason">'
+        f'<b>추천 전략:</b> {final_recommendation}<br>'
+        f'<b>추천 이유:</b> {reason}<br>'
+        '<b>설명:</b> 이 대표 경로는 최종 추천 목록 중 예상 비용이 가장 낮은 경로를 기준으로 표시됩니다.'
+        '</div>'
+
+        '</div>'
+    )
+
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def show_main_hero():
     st.markdown(
         """
@@ -876,6 +1020,8 @@ def show_excel_optimizer():
     if final_recommendations.empty:
         st.info("최종 추천으로 정리할 결과가 없습니다.")
     else:
+        render_best_recommendation(final_recommendations)
+
         summary_col1, summary_col2 = st.columns(2)
 
         summary_col1.metric("최종 추천 건수", f"{len(final_recommendations)}건")
