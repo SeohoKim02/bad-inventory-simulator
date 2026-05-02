@@ -31,6 +31,301 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# =========================
+# 전역 스타일
+# =========================
+def apply_global_style():
+    st.markdown(
+        """
+        <style>
+            .stApp {
+                background: linear-gradient(180deg, #fffdf4 0%, #ffffff 42%, #f8f9fa 100%);
+            }
+
+            section[data-testid="stSidebar"] {
+                background: linear-gradient(180deg, #fff8d6 0%, #ffffff 100%);
+                border-right: 1px solid #f1e4a8;
+            }
+
+            .main-hero {
+                padding: 42px 44px;
+                border-radius: 32px;
+                background:
+                    radial-gradient(circle at top left, rgba(255, 212, 59, 0.45), transparent 32%),
+                    linear-gradient(135deg, #fff3bf 0%, #fff9db 45%, #ffffff 100%);
+                border: 1px solid #f6e58d;
+                box-shadow: 0 12px 34px rgba(0,0,0,0.07);
+                margin-bottom: 28px;
+            }
+
+            .main-hero h1 {
+                font-size: 54px;
+                margin-bottom: 8px;
+                color: #222;
+                letter-spacing: -1px;
+            }
+
+            .main-hero p {
+                font-size: 19px;
+                color: #555;
+                margin-bottom: 0;
+                line-height: 1.65;
+            }
+
+            .hero-sub {
+                max-width: 860px;
+                margin-top: 10px;
+            }
+
+            .badge {
+                display: inline-block;
+                padding: 8px 13px;
+                border-radius: 999px;
+                background: #fff3bf;
+                border: 1px solid #ffd43b;
+                font-weight: 700;
+                font-size: 13px;
+                margin-right: 6px;
+                margin-bottom: 6px;
+            }
+
+            .blue-badge {
+                background: #e7f5ff;
+                border: 1px solid #74c0fc;
+            }
+
+            .green-badge {
+                background: #ebfbee;
+                border: 1px solid #8ce99a;
+            }
+
+            .pink-badge {
+                background: #fff0f6;
+                border: 1px solid #faa2c1;
+            }
+
+            .mode-card {
+                padding: 32px;
+                border-radius: 28px;
+                border: 1px solid #eee;
+                background: #ffffff;
+                box-shadow: 0 10px 28px rgba(0,0,0,0.055);
+                min-height: 340px;
+                transition: 0.2s ease;
+                margin-bottom: 12px;
+            }
+
+            .mode-card-yellow {
+                background:
+                    radial-gradient(circle at top right, rgba(255, 212, 59, 0.28), transparent 30%),
+                    linear-gradient(135deg, #fffbea 0%, #fff3bf 100%);
+                border: 1px solid #ffe066;
+            }
+
+            .mode-card-blue {
+                background:
+                    radial-gradient(circle at top right, rgba(116, 192, 252, 0.25), transparent 30%),
+                    linear-gradient(135deg, #eef7ff 0%, #e7f5ff 100%);
+                border: 1px solid #a5d8ff;
+            }
+
+            .mode-card h3 {
+                font-size: 28px;
+                margin-bottom: 12px;
+            }
+
+            .mode-card p {
+                font-size: 15.5px;
+                color: #444;
+                line-height: 1.7;
+            }
+
+            .mode-card ul {
+                margin-top: 12px;
+                padding-left: 20px;
+                color: #555;
+                line-height: 1.8;
+            }
+
+            .mode-mini {
+                margin-top: 16px;
+                padding: 12px 14px;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.72);
+                border: 1px solid rgba(255, 255, 255, 0.9);
+                font-size: 14px;
+                color: #444;
+            }
+
+            .workflow-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 16px;
+                margin-top: 22px;
+                margin-bottom: 20px;
+            }
+
+            .workflow-card {
+                padding: 22px;
+                border-radius: 24px;
+                background: #ffffff;
+                border: 1px solid #eeeeee;
+                box-shadow: 0 8px 22px rgba(0,0,0,0.045);
+            }
+
+            .workflow-number {
+                width: 36px;
+                height: 36px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                background: #ffd43b;
+                font-weight: 900;
+                margin-bottom: 12px;
+            }
+
+            .workflow-title {
+                font-size: 18px;
+                font-weight: 800;
+                margin-bottom: 8px;
+            }
+
+            .workflow-text {
+                color: #555;
+                line-height: 1.6;
+                font-size: 14px;
+            }
+
+            .mode-header {
+                padding: 30px 36px;
+                border-radius: 28px;
+                background:
+                    radial-gradient(circle at top left, rgba(255, 212, 59, 0.30), transparent 30%),
+                    linear-gradient(135deg, #fff3bf 0%, #fff9db 55%, #ffffff 100%);
+                border: 1px solid #f6e58d;
+                box-shadow: 0 10px 26px rgba(0,0,0,0.055);
+                margin-top: 18px;
+                margin-bottom: 18px;
+            }
+
+            .mode-header h2 {
+                font-size: 34px;
+                margin-bottom: 8px;
+                letter-spacing: -0.5px;
+            }
+
+            .mode-header p {
+                font-size: 16px;
+                color: #555;
+                margin-bottom: 0;
+                line-height: 1.65;
+            }
+
+            .feature-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 14px;
+                margin-top: 16px;
+                margin-bottom: 18px;
+            }
+
+            .feature-card {
+                padding: 18px;
+                border-radius: 20px;
+                background: #ffffff;
+                border: 1px solid #eeeeee;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+            }
+
+            .feature-icon {
+                font-size: 25px;
+                margin-bottom: 6px;
+            }
+
+            .feature-title {
+                font-weight: 800;
+                margin-bottom: 6px;
+            }
+
+            .feature-desc {
+                color: #666;
+                font-size: 13.5px;
+                line-height: 1.55;
+            }
+
+            .section-card {
+                padding: 24px 28px;
+                border-radius: 22px;
+                border: 1px solid #eeeeee;
+                background: #ffffff;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+                margin-top: 18px;
+                margin-bottom: 18px;
+            }
+
+            .soft-card {
+                padding: 18px 20px;
+                border-radius: 20px;
+                background: linear-gradient(135deg, #fffbea, #ffffff);
+                border: 1px solid #f4e7a1;
+                margin-top: 14px;
+                margin-bottom: 14px;
+            }
+
+            .mini-guide {
+                padding: 18px 20px;
+                border-radius: 20px;
+                background: #ffffff;
+                border: 1px solid #eeeeee;
+                color: #444;
+                line-height: 1.7;
+                margin-top: 14px;
+                margin-bottom: 18px;
+                box-shadow: 0 6px 18px rgba(0,0,0,0.035);
+            }
+
+            div[data-testid="stMetric"] {
+                background: #ffffff;
+                border: 1px solid #eeeeee;
+                padding: 16px;
+                border-radius: 18px;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.035);
+            }
+
+            .footer-note {
+                text-align: center;
+                color: #777;
+                font-size: 13px;
+                padding-top: 18px;
+            }
+
+            @media (max-width: 900px) {
+                .workflow-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .feature-grid {
+                    grid-template-columns: 1fr 1fr;
+                }
+
+                .main-hero h1 {
+                    font-size: 40px;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+apply_global_style()
+
+
+# =========================
+# 상태 초기화
+# =========================
 if "selected_mode" not in st.session_state:
     st.session_state.selected_mode = None
 
@@ -39,92 +334,192 @@ if "cart" not in st.session_state:
 
 
 # =========================
-# 공통 상단
+# 공통 UI
 # =========================
-st.title("📦 Varo")
-st.write("편의점 재고 공유 및 최적 의사결정 시스템")
+def show_main_hero():
+    st.markdown(
+        """
+        <div class="main-hero">
+            <h1>📦 Varo</h1>
+            <p class="hero-sub">
+                편의점 악성재고를 줄이기 위해 재고 상태, 이동 비용, 프로모션 효과, 최적 경로를 함께 분석하는
+                <b>재고 공유 및 의사결정 지원 시스템</b>입니다.
+            </p>
+            <div style="margin-top:20px;">
+                <span class="badge">악성재고 판단</span>
+                <span class="badge">최적 재배치</span>
+                <span class="badge blue-badge">카카오맵 시각화</span>
+                <span class="badge green-badge">Inventory 변화</span>
+                <span class="badge pink-badge">Truck 시뮬레이션</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def show_workflow():
+    st.markdown(
+        """
+        <div class="workflow-grid">
+            <div class="workflow-card">
+                <div class="workflow-number">1</div>
+                <div class="workflow-title">데이터 입력</div>
+                <div class="workflow-text">
+                    단일 상품을 직접 입력하거나, 여러 점포의 재고·상품·경로 데이터를 엑셀로 업로드합니다.
+                </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-number">2</div>
+                <div class="workflow-title">의사결정 분석</div>
+                <div class="workflow-text">
+                    유지, 할인, 폐기, 점포 이동, DC 경유, 다중 경로를 비교해 최적 처리 방식을 추천합니다.
+                </div>
+            </div>
+            <div class="workflow-card">
+                <div class="workflow-number">3</div>
+                <div class="workflow-title">지도·재고 시각화</div>
+                <div class="workflow-text">
+                    추천 경로를 지도에 표시하고, Truck 이동 후 점포별 Inventory 변화를 대시보드로 확인합니다.
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def show_mode_header(title, description, badges=None):
+    badge_html = ""
+
+    if badges:
+        for badge in badges:
+            badge_html += f'<span class="badge">{badge}</span>'
+
+    st.markdown(
+        f"""
+        <div class="mode-header">
+            <h2>{title}</h2>
+            <p>{description}</p>
+            <div style="margin-top:14px;">{badge_html}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def show_back_button():
+    if st.button("← 방식 선택 화면으로 돌아가기"):
+        st.session_state.selected_mode = None
+        st.rerun()
+
+
+def show_excel_feature_cards():
+    st.markdown(
+        """
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🧭</div>
+                <div class="feature-title">최적 경로 추천</div>
+                <div class="feature-desc">직접 이동, DC 경유, 다중 경로를 비교해 더 효율적인 이동 방식을 찾습니다.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🚚</div>
+                <div class="feature-title">Truck 시뮬레이션</div>
+                <div class="feature-desc">추천 경로를 따라 Truck이 이동하는 모습을 카카오맵 위에서 확인합니다.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📦</div>
+                <div class="feature-title">Inventory 변화</div>
+                <div class="feature-desc">보내는 점포와 받는 점포의 이동 전후 재고 변화를 카드와 그래프로 보여줍니다.</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🎁</div>
+                <div class="feature-title">프로모션 비교</div>
+                <div class="feature-desc">재배치 비용과 할인/1+1 프로모션 비용을 비교해 처리 전략을 추천합니다.</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # =========================
-# 첫 화면: 방식 선택
+# 첫 화면
 # =========================
 def show_mode_selector():
-    st.markdown("---")
-    st.subheader("사용할 방식을 선택하세요")
+    show_main_hero()
+
+    st.markdown("### 사용할 방식을 선택하세요")
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown(
             """
-            <div style="
-                padding: 28px;
-                border-radius: 20px;
-                border: 1px solid #eee;
-                background: linear-gradient(135deg, #fffbea, #fff3bf);
-                min-height: 260px;
-            ">
+            <div class="mode-card mode-card-yellow">
                 <h3>🧮 개별 입력 계산</h3>
                 <p>
-                점포명, 상품명, 재고 수량, 판매량, 할인율, 이동 가능 여부 등을
-                직접 입력해서 악성재고 여부와 처리 전략을 계산합니다.
+                점포명, 상품명, 재고 수량, 판매량, 할인율, 이동 가능 여부를 직접 입력해서
+                악성재고 여부와 처리 전략을 빠르게 계산합니다.
                 </p>
                 <p><b>추천 상황</b></p>
                 <ul>
-                    <li>간단한 단일 상품 테스트</li>
-                    <li>계산 방식 설명</li>
-                    <li>발표 시 기본 원리 시연</li>
+                    <li>단일 상품을 빠르게 테스트할 때</li>
+                    <li>계산 원리를 설명할 때</li>
+                    <li>발표에서 기본 구조를 시연할 때</li>
                 </ul>
+                <div class="mode-mini">
+                    입력값을 바꾸면 비용 비교와 추천 전략이 어떻게 달라지는지 확인할 수 있습니다.
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        if st.button("🧮 개별 입력 계산 시작", use_container_width=True):
+        if st.button("🧮 개별 입력 계산 시작", use_container_width=True, type="primary"):
             st.session_state.selected_mode = "single"
             st.rerun()
 
     with col2:
         st.markdown(
             """
-            <div style="
-                padding: 28px;
-                border-radius: 20px;
-                border: 1px solid #eee;
-                background: linear-gradient(135deg, #eef7ff, #e7f5ff);
-                min-height: 260px;
-            ">
+            <div class="mode-card mode-card-blue">
                 <h3>📊 엑셀 기반 최적 경로 추천</h3>
                 <p>
                 여러 점포, 상품, 재고, 경로 데이터를 엑셀로 업로드하여
-                DC 경유, 점포 간 이동, 프로모션, 다중 경로를 종합 분석합니다.
+                최적 재배치 경로와 처리 전략을 종합 분석합니다.
                 </p>
                 <p><b>추천 상황</b></p>
                 <ul>
-                    <li>여러 점포 동시 분석</li>
-                    <li>최적 경로 추천</li>
-                    <li>카카오맵 기반 Truck 시뮬레이션</li>
+                    <li>여러 점포를 동시에 분석할 때</li>
+                    <li>최적 이동 경로를 추천받고 싶을 때</li>
+                    <li>지도와 Truck 이동을 시각화할 때</li>
                 </ul>
+                <div class="mode-mini">
+                    최종 추천, 지도 시각화, Inventory 변화 대시보드까지 한 번에 확인합니다.
+                </div>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        if st.button("📊 엑셀 기반 분석 시작", use_container_width=True):
+        if st.button("📊 엑셀 기반 분석 시작", use_container_width=True, type="primary"):
             st.session_state.selected_mode = "excel"
             st.rerun()
 
-    st.markdown("---")
-    st.info("처음 사용하는 경우에는 개별 입력 계산으로 원리를 확인한 뒤, 엑셀 기반 분석으로 확장하는 것을 추천합니다.")
+    show_workflow()
 
-
-# =========================
-# 뒤로가기 버튼
-# =========================
-def show_back_button():
-    if st.button("← 방식 선택 화면으로 돌아가기"):
-        st.session_state.selected_mode = None
-        st.rerun()
+    st.markdown(
+        """
+        <div class="mini-guide">
+            <b>추천 사용 순서</b><br>
+            처음에는 <b>개별 입력 계산</b>으로 악성재고 판단 원리를 확인하고,
+            이후 <b>엑셀 기반 최적 경로 추천</b>으로 여러 점포 분석과 Truck 시뮬레이션을 확인하는 흐름을 추천합니다.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # =========================
@@ -133,11 +528,10 @@ def show_back_button():
 def show_single_calculator():
     show_back_button()
 
-    st.markdown("---")
-    st.header("🧮 개별 입력 기반 악성재고 계산")
-
-    st.write(
-        "단일 점포와 단일 상품을 기준으로 악성재고 여부, 비용 비교, 최종 처리 전략을 계산합니다."
+    show_mode_header(
+        "🧮 개별 입력 기반 악성재고 계산",
+        "단일 점포와 단일 상품을 기준으로 악성재고 여부, 비용 비교, 최종 처리 전략을 계산합니다.",
+        ["단일 상품", "직접 입력", "비용 비교", "계산식 확인"]
     )
 
     st.sidebar.header("개별 입력값 설정")
@@ -171,14 +565,16 @@ def show_single_calculator():
     cost_per_km = st.sidebar.number_input("km당 운송비(원)", min_value=0.0, value=500.0)
     target_store_sales_30d = st.sidebar.number_input("이동 대상 점포 최근 30일 판매량", min_value=0, value=20)
 
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("입력 정보")
 
     col_a, col_b = st.columns(2)
     col_a.write(f"점포명: **{store_name}**")
     col_b.write(f"상품명: **{product_name}**")
 
-    if st.button("계산 시작", type="primary"):
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.button("계산 시작", type="primary", use_container_width=True):
         result = calculate_inventory_analysis(
             stock_qty=stock_qty,
             sales_30d=sales_30d,
@@ -205,7 +601,7 @@ def show_single_calculator():
 
         st.success("계산이 완료되었습니다.")
 
-        st.markdown("---")
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("악성재고 판단 결과")
 
         col1, col2, col3 = st.columns(3)
@@ -222,17 +618,12 @@ def show_single_calculator():
         else:
             st.write("위험 요소가 크지 않습니다.")
 
-        st.markdown("---")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("비용 비교")
 
-        st.write(f"유지 비용: {result['keep_cost']}원")
-        st.write(f"할인 전략 순비용: {result['discount_net_cost']}원")
-        st.write(f"폐기 비용: {result['disposal_cost']}원")
-
         if result["transfer_net_cost"] is not None:
-            st.write(f"자동 계산된 이동비: {result['transfer_cost']}원")
-            st.write(f"타점포 이동 순비용: {result['transfer_net_cost']}원")
-
             cost_df = pd.DataFrame(
                 {
                     "전략": ["유지", "할인", "타점포 이동", "폐기"],
@@ -245,8 +636,6 @@ def show_single_calculator():
                 }
             )
         else:
-            st.write("타점포 이동 순비용: 이동 불가능")
-
             cost_df = pd.DataFrame(
                 {
                     "전략": ["유지", "할인", "폐기"],
@@ -260,15 +649,17 @@ def show_single_calculator():
 
         st.dataframe(cost_df, use_container_width=True)
         st.bar_chart(cost_df, x="전략", y="비용")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("---")
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("최종 추천")
 
         st.success(f"추천 전략: {result['best_action']}")
         st.write(f"추천 이유: {result['recommendation_reason']}")
         st.write(f"발주 조언: **{result['order_advice']}**")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("---")
+        st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("할인율별 비교")
 
         st.dataframe(discount_comparison)
@@ -281,16 +672,15 @@ def show_single_calculator():
         )
 
         st.bar_chart(discount_chart_data, x="할인율", y="순비용")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.subheader("계산 방식")
-
-        st.write(result["formula_text"]["stock_cover_days_formula"])
-        st.write(result["formula_text"]["risk_formula"])
-        st.write(result["formula_text"]["keep_cost_formula"])
-        st.write(result["formula_text"]["discount_formula"])
-        st.write(result["formula_text"]["transfer_formula"])
-        st.write(result["formula_text"]["disposal_formula"])
+        with st.expander("계산 방식 보기"):
+            st.write(result["formula_text"]["stock_cover_days_formula"])
+            st.write(result["formula_text"]["risk_formula"])
+            st.write(result["formula_text"]["keep_cost_formula"])
+            st.write(result["formula_text"]["discount_formula"])
+            st.write(result["formula_text"]["transfer_formula"])
+            st.write(result["formula_text"]["disposal_formula"])
 
 
 # =========================
@@ -299,12 +689,13 @@ def show_single_calculator():
 def show_excel_optimizer():
     show_back_button()
 
-    st.markdown("---")
-    st.header("📊 엑셀 기반 최적 경로 추천")
-
-    st.write(
-        "엑셀 데이터를 기반으로 DC-점포 거리, 컷라인, 거래가능시간, 프로모션, 다중 경로, Truck 이동을 종합 분석합니다."
+    show_mode_header(
+        "📊 엑셀 기반 최적 경로 추천",
+        "여러 점포, 상품, 재고, 경로 데이터를 기반으로 최적 재배치와 Truck 이동을 분석합니다.",
+        ["엑셀 업로드", "최적 경로", "카카오맵", "Truck 시뮬레이션", "Inventory 변화"]
     )
+
+    show_excel_feature_cards()
 
     st.sidebar.header("지도 설정")
 
@@ -314,13 +705,15 @@ def show_excel_optimizer():
         help="카카오 개발자 사이트에서 복사한 JavaScript 키를 입력하세요."
     )
 
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("엑셀 파일 입력")
 
     uploaded_file = st.file_uploader(
         "편의점 재고 데이터 엑셀 파일을 업로드하세요",
         type=["xlsx"]
     )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if uploaded_file is None:
         st.info("엑셀 파일을 업로드하면 분석이 시작됩니다.")
@@ -342,6 +735,7 @@ def show_excel_optimizer():
     # =========================
     # 데이터 요약
     # =========================
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("데이터 요약")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -364,10 +758,12 @@ def show_excel_optimizer():
         st.write("routes 시트")
         st.dataframe(routes)
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
     # 분석 조건
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("분석 조건 설정")
 
     setting_col1, setting_col2, setting_col3 = st.columns(3)
@@ -413,6 +809,8 @@ def show_excel_optimizer():
             value=0,
             key="promotion_fixed_cost_excel"
         )
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # =========================
     # 분석 계산
@@ -472,7 +870,7 @@ def show_excel_optimizer():
     # =========================
     # 최종 추천
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("최종 추천 모아보기")
 
     if final_recommendations.empty:
@@ -505,7 +903,6 @@ def show_excel_optimizer():
             ]
         )
 
-        st.markdown("---")
         st.subheader("🧺 Inventory 장바구니 담기")
 
         final_recommendations_view = final_recommendations.reset_index(drop=True)
@@ -538,9 +935,12 @@ def show_excel_optimizer():
             st.session_state.cart.append(cart_item)
             st.success("Inventory 장바구니에 담았습니다.")
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
     # Inventory 장바구니
     # =========================
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("🧾 Inventory 장바구니")
 
     if len(st.session_state.cart) == 0:
@@ -588,10 +988,12 @@ def show_excel_optimizer():
             st.session_state.cart = []
             st.rerun()
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
-    # 지도
+    # 카카오맵
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("카카오맵 기반 점포 및 경로 시각화")
 
     if kakao_js_key:
@@ -599,10 +1001,12 @@ def show_excel_optimizer():
     else:
         st.info("카카오맵을 보려면 왼쪽 사이드바에 JavaScript 키를 입력하세요.")
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
     # 추천 경로 강조
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("추천 경로 강조 지도")
 
     highlight_paths = []
@@ -663,10 +1067,12 @@ def show_excel_optimizer():
     else:
         st.info("강조 표시할 추천 경로가 없습니다.")
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
     # Truck 이동 + Inventory 변화
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("🚚 Truck 이동 시뮬레이션 + Inventory 변화")
 
     truck_speed = st.slider(
@@ -809,10 +1215,12 @@ def show_excel_optimizer():
     else:
         st.info("Truck 이동을 표시할 추천 경로가 없습니다.")
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # =========================
     # 상세 분석 결과
     # =========================
-    st.markdown("---")
+    st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("상세 분석 결과")
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
@@ -948,6 +1356,8 @@ def show_excel_optimizer():
             st.dataframe(network_summary)
             st.bar_chart(network_summary.set_index("network_recommendation")["count"])
 
+    st.markdown('</div>', unsafe_allow_html=True)
+
 
 # =========================
 # 실행 분기
@@ -961,4 +1371,11 @@ elif st.session_state.selected_mode == "excel":
 
 
 st.markdown("---")
-st.caption("© 2026 김서호. All rights reserved.")
+st.markdown(
+    """
+    <div class="footer-note">
+        © 2026 김서호. All rights reserved. | Varo 편의점 재고 공유 및 최적 의사결정 시스템
+    </div>
+    """,
+    unsafe_allow_html=True
+)
