@@ -1516,12 +1516,3 @@ elif st.session_state.selected_mode == "excel":
     show_excel_optimizer()
 
 
-st.markdown("---")
-st.markdown(
-    """
-    <div class="footer-note">
-        © 2026 김서호. All rights reserved. | Varo 편의점 재고 공유 및 최적 의사결정 시스템
-    </div>
-    """,
-    unsafe_allow_html=True
-)
