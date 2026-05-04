@@ -1,3 +1,4 @@
+
 import json
 import streamlit.components.v1 as components
 
@@ -29,28 +30,13 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
     <head>
         <meta charset="utf-8">
         <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
-
         <style>
-            html, body {
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                height: 100%;
-                font-family: Arial, sans-serif;
-            }
-
-            #map {
-                width: 100%;
-                height: 650px;
-                border-radius: 14px;
-                border: 1px solid #dddddd;
-            }
+            html, body { margin: 0; padding: 0; width: 100%; height: 100%; font-family: Arial, sans-serif; }
+            #map { width: 100%; height: 650px; border-radius: 14px; border: 1px solid #dddddd; }
         </style>
     </head>
-
     <body>
         <div id="map"></div>
-
         <script>
             var stores = __STORES_JSON__;
             var routes = __ROUTES_JSON__;
@@ -58,46 +44,30 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
 
             var script = document.createElement('script');
             script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_KEY__&autoload=false';
-
-            script.onload = function() {
-                kakao.maps.load(function() {
-                    initMap();
-                });
-            };
-
+            script.onload = function() { kakao.maps.load(function() { initMap(); }); };
             document.head.appendChild(script);
 
             function initMap() {
                 var mapContainer = document.getElementById('map');
-
                 var mapOption = {
                     center: new kakao.maps.LatLng(__CENTER_LAT__, __CENTER_LNG__),
                     level: 8
                 };
 
                 var map = new kakao.maps.Map(mapContainer, mapOption);
-
                 var storeById = {};
                 var storeByName = {};
                 var bounds = new kakao.maps.LatLngBounds();
 
                 stores.forEach(function(store) {
-                    if (store.latitude == null || store.longitude == null) {
-                        return;
-                    }
+                    if (store.latitude == null || store.longitude == null) return;
 
                     var position = new kakao.maps.LatLng(store.latitude, store.longitude);
-
                     storeById[String(store.store_id)] = store;
                     storeByName[String(store.store_name)] = store;
-
                     bounds.extend(position);
 
-                    var marker = new kakao.maps.Marker({
-                        map: map,
-                        position: position
-                    });
-
+                    var marker = new kakao.maps.Marker({ map: map, position: position });
                     var storeName = store.store_name || "점포";
                     var storeType = store.type || "unknown";
 
@@ -109,26 +79,16 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
                             '</div>'
                     });
 
-                    kakao.maps.event.addListener(marker, 'mouseover', function() {
-                        info.open(map, marker);
-                    });
-
-                    kakao.maps.event.addListener(marker, 'mouseout', function() {
-                        info.close();
-                    });
+                    kakao.maps.event.addListener(marker, 'mouseover', function() { info.open(map, marker); });
+                    kakao.maps.event.addListener(marker, 'mouseout', function() { info.close(); });
                 });
 
-                if (stores.length > 0) {
-                    map.setBounds(bounds);
-                }
+                if (stores.length > 0) map.setBounds(bounds);
 
                 routes.forEach(function(route) {
                     var fromStore = storeById[String(route.from_id)];
                     var toStore = storeById[String(route.to_id)];
-
-                    if (!fromStore || !toStore) {
-                        return;
-                    }
+                    if (!fromStore || !toStore) return;
 
                     var path = [
                         new kakao.maps.LatLng(fromStore.latitude, fromStore.longitude),
@@ -149,22 +109,14 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
                 highlightPaths.forEach(function(pathInfo, idx) {
                     var pathNames = pathInfo.path_names || [];
                     var label = pathInfo.label || "추천 경로";
-
                     var coords = [];
 
                     pathNames.forEach(function(name) {
                         var store = storeByName[String(name)];
-
-                        if (store) {
-                            coords.push(
-                                new kakao.maps.LatLng(store.latitude, store.longitude)
-                            );
-                        }
+                        if (store) coords.push(new kakao.maps.LatLng(store.latitude, store.longitude));
                     });
 
-                    if (coords.length < 2) {
-                        return;
-                    }
+                    if (coords.length < 2) return;
 
                     var highlightLine = new kakao.maps.Polyline({
                         path: coords,
@@ -188,9 +140,7 @@ def create_kakao_map_html(stores, routes, kakao_js_key, highlight_paths=None):
                         info.open(map);
                     });
 
-                    kakao.maps.event.addListener(highlightLine, 'mouseout', function() {
-                        info.close();
-                    });
+                    kakao.maps.event.addListener(highlightLine, 'mouseout', function() { info.close(); });
                 });
             }
         </script>
@@ -218,13 +168,13 @@ def show_kakao_map_with_highlights(stores, routes, kakao_js_key, highlight_paths
     components.html(html, height=720, scrolling=False)
 
 
-def show_kakao_map_with_truck(
+def show_kakao_map_with_multi_trucks(
     stores,
     routes,
     kakao_js_key,
-    truck_path,
+    truck_scenarios,
     speed_multiplier=1.0,
-    inventory_changes=None,
+    default_selected_count=3,
 ):
     stores_data = stores.copy().dropna(subset=["latitude", "longitude"])
     routes_data = routes.copy()
@@ -235,15 +185,15 @@ def show_kakao_map_with_truck(
 
     kakao_js_key = str(kakao_js_key).strip()
     speed_multiplier = float(speed_multiplier)
-    inventory_changes = inventory_changes or {}
+    truck_scenarios = truck_scenarios or []
+    default_selected_count = int(default_selected_count)
 
     center_lat = float(stores_data["latitude"].mean())
     center_lng = float(stores_data["longitude"].mean())
 
     stores_json = _records_json(stores_data)
     routes_json = _records_json(routes_data)
-    truck_path_json = json.dumps(truck_path, ensure_ascii=False)
-    inventory_changes_json = json.dumps(inventory_changes, ensure_ascii=False)
+    scenarios_json = json.dumps(truck_scenarios, ensure_ascii=False)
 
     html = """
     <!DOCTYPE html>
@@ -264,7 +214,7 @@ def show_kakao_map_with_truck(
 
             #map {
                 width: 100%;
-                height: 580px;
+                height: 590px;
                 border-radius: 16px;
                 border: 1px solid #dddddd;
             }
@@ -278,9 +228,9 @@ def show_kakao_map_with_truck(
                 font-size: 15px;
             }
 
-            #inventory-panel {
+            #route-panel {
                 margin-top: 14px;
-                padding: 16px;
+                padding: 18px;
                 border: 1px solid #e5e5e5;
                 border-radius: 18px;
                 background: #ffffff;
@@ -288,108 +238,87 @@ def show_kakao_map_with_truck(
             }
 
             .truck-marker {
-                width: 52px;
-                height: 52px;
+                min-width: 48px;
+                height: 48px;
+                padding: 0 9px;
                 display: flex;
+                gap: 3px;
                 align-items: center;
                 justify-content: center;
-                border-radius: 50%;
+                border-radius: 999px;
                 background: #fff3bf;
                 border: 4px solid #ffd43b;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.28);
-                font-size: 32px;
-                transform: translate(-26px, -26px);
+                font-size: 24px;
+                font-weight: 900;
+                transform: translate(-24px, -24px);
+                white-space: nowrap;
             }
 
-            .dashboard-header {
-                display: flex;
-                justify-content: space-between;
-                gap: 12px;
-                align-items: center;
-                margin-bottom: 14px;
-                flex-wrap: wrap;
-            }
-
-            .dashboard-title {
-                font-size: 20px;
-                font-weight: 800;
-            }
-
-            .status-badge {
-                padding: 8px 12px;
-                border-radius: 999px;
-                background: #fff3bf;
-                border: 1px solid #ffd43b;
-                font-weight: 700;
-                font-size: 14px;
-            }
-
-            .inventory-grid {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-                gap: 14px;
-            }
-
-            .inventory-card {
-                border: 1px solid #e9ecef;
-                border-radius: 16px;
-                padding: 16px;
-                background: #fafafa;
-            }
-
-            .inventory-card.selected {
-                border: 2px solid #ffd43b;
-                background: #fffbea;
-            }
-
-            .store-name {
-                font-size: 18px;
-                font-weight: 800;
-                margin-bottom: 4px;
-            }
-
-            .store-role {
-                color: #666;
-                font-size: 14px;
+            .panel-title {
+                font-size: 21px;
+                font-weight: 900;
                 margin-bottom: 12px;
             }
 
-            .metric-row {
+            .route-grid {
                 display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 8px;
+                grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+                gap: 12px;
                 margin-bottom: 14px;
             }
 
-            .mini-metric {
-                border-radius: 12px;
-                background: white;
-                padding: 10px;
-                border: 1px solid #eeeeee;
-                text-align: center;
+            .route-mini {
+                border-radius: 14px;
+                background: #f8f9fa;
+                border: 1px solid #e9ecef;
+                padding: 12px;
             }
 
-            .mini-label {
+            .route-label {
                 font-size: 12px;
                 color: #777;
                 margin-bottom: 4px;
             }
 
-            .mini-value {
-                font-size: 18px;
-                font-weight: 800;
+            .route-value {
+                font-size: 16px;
+                font-weight: 900;
             }
 
-            .change-plus {
-                color: #2b8a3e;
+            .reason-box {
+                padding: 12px 14px;
+                background: #fffbea;
+                border: 1px solid #ffe066;
+                border-radius: 14px;
+                line-height: 1.6;
+                margin-bottom: 14px;
             }
 
-            .change-minus {
-                color: #c92a2a;
-            }
-
-            .bar-section {
+            .inventory-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 12px;
                 margin-top: 10px;
+            }
+
+            .inventory-card {
+                border: 1px solid #e9ecef;
+                border-radius: 16px;
+                padding: 14px;
+                background: #fafafa;
+            }
+
+            .store-name {
+                font-size: 17px;
+                font-weight: 900;
+                margin-bottom: 4px;
+            }
+
+            .store-role {
+                color: #666;
+                font-size: 13px;
+                margin-bottom: 10px;
             }
 
             .bar-label {
@@ -402,11 +331,11 @@ def show_kakao_map_with_truck(
 
             .bar-track {
                 width: 100%;
-                height: 16px;
+                height: 14px;
                 border-radius: 999px;
                 background: #e9ecef;
                 overflow: hidden;
-                margin-bottom: 10px;
+                margin-bottom: 9px;
             }
 
             .bar-before {
@@ -421,33 +350,37 @@ def show_kakao_map_with_truck(
                 border-radius: 999px;
             }
 
-            .bar-current {
-                height: 100%;
-                background: #ffd43b;
-                border-radius: 999px;
-            }
-
-            .summary-box {
-                margin-top: 14px;
-                padding: 12px;
-                background: #f8f9fa;
-                border-radius: 14px;
-                border: 1px solid #e9ecef;
-                line-height: 1.6;
-            }
+            .change-plus { color: #2b8a3e; font-weight: 900; }
+            .change-minus { color: #c92a2a; font-weight: 900; }
 
             button {
                 padding: 8px 12px;
                 margin-right: 6px;
+                margin-top: 4px;
                 border: 1px solid #ddd;
                 border-radius: 10px;
                 background: white;
                 cursor: pointer;
-                font-weight: 600;
+                font-weight: 700;
             }
 
-            button:hover {
-                background: #fff3bf;
+            button:hover { background: #fff3bf; }
+
+            .click-guide {
+                margin-top: 8px;
+                color: #555;
+                font-size: 13px;
+                line-height: 1.5;
+            }
+
+            .selected-list {
+                margin-top: 8px;
+                padding: 8px 10px;
+                background: rgba(255,255,255,0.65);
+                border: 1px solid rgba(255,255,255,0.8);
+                border-radius: 12px;
+                font-size: 13px;
+                line-height: 1.5;
             }
         </style>
     </head>
@@ -456,35 +389,46 @@ def show_kakao_map_with_truck(
         <div id="map"></div>
 
         <div id="control-panel">
-            <b>🚚 Truck 이동 시뮬레이션</b><br>
+            <b>🚚 지도 클릭 기반 Multi-Truck 이동 시뮬레이션</b><br>
             상태: <span id="truck-status">준비 중</span><br>
-            현재 배속: <b><span id="speed-text">__SPEED__</span>x</b>
+            현재 배속: <b><span id="speed-text">__SPEED__</span>x</b> /
+            전체 후보 경로 수: <b><span id="route-count">0</span>개</b> /
+            선택 경로 수: <b><span id="selected-count">0</span>개</b>
             <div style="margin-top:10px;">
-                <button onclick="restartTruck()">처음부터 재생</button>
-                <button onclick="pauseTruck()">일시정지</button>
-                <button onclick="resumeTruck()">다시 재생</button>
+                <button onclick="restartTrucks()">선택 경로 Truck 재생</button>
+                <button onclick="selectAllRoutes()">전체 경로 선택</button>
+                <button onclick="clearSelectedRoutes()">선택 해제</button>
+                <button onclick="pauseTrucks()">일시정지</button>
+                <button onclick="resumeTrucks()">다시 재생</button>
             </div>
+            <div class="click-guide">
+                ① 지도 위 색깔 경로선을 클릭하면 선택/해제됩니다.<br>
+                ② 클릭한 경로의 추천 결과와 Inventory 변화가 아래에 표시됩니다.<br>
+                ③ 여러 경로를 선택한 뒤 <b>선택 경로 Truck 재생</b>을 누르면 Truck 여러 대가 동시에 이동합니다.
+            </div>
+            <div id="selected-list" class="selected-list">선택된 경로가 없습니다.</div>
         </div>
 
-        <div id="inventory-panel"></div>
+        <div id="route-panel"></div>
 
         <script>
             var stores = __STORES_JSON__;
             var routes = __ROUTES_JSON__;
-            var truckPath = __TRUCK_PATH_JSON__;
-            var inventoryChanges = __INVENTORY_CHANGES_JSON__;
+            var scenarios = __SCENARIOS_JSON__;
             var speedMultiplier = Number(__SPEED__);
+            var defaultSelectedCount = Number(__DEFAULT_SELECTED_COUNT__);
 
             var map = null;
-            var truckOverlay = null;
-            var linePath = [];
-
-            var segmentIndex = 0;
-            var progress = 0;
+            var storeById = {};
+            var storeByName = {};
+            var routeStates = [];
+            var truckStates = [];
             var animationTimer = null;
             var isPaused = false;
-            var truckArrived = false;
-            var selectedStoreName = null;
+            var selectedIndexes = {};
+            var lastClickedIndex = null;
+
+            var colors = ['#FFD43B', '#228BE6', '#51CF66', '#FF922B', '#CC5DE8', '#20C997', '#FF6B6B', '#748FFC', '#F06595', '#845EF7'];
 
             var script = document.createElement('script');
             script.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=__KAKAO_KEY__&autoload=false';
@@ -503,7 +447,6 @@ def show_kakao_map_with_truck(
 
             function initMap() {
                 var mapContainer = document.getElementById('map');
-
                 var mapOption = {
                     center: new kakao.maps.LatLng(__CENTER_LAT__, __CENTER_LNG__),
                     level: 8
@@ -513,24 +456,42 @@ def show_kakao_map_with_truck(
 
                 drawStoreMarkers();
                 drawBaseRoutes();
-                prepareTruckPath();
-                renderInventoryDashboard();
+                prepareScenarioRoutes();
+
+                for (var i = 0; i < Math.min(defaultSelectedCount, scenarios.length); i++) {
+                    selectedIndexes[i] = true;
+                }
+
+                document.getElementById('route-count').innerHTML = String(scenarios.length);
+                updateRouteStyles();
+                updateSelectedList();
+
+                if (scenarios.length > 0) {
+                    lastClickedIndex = 0;
+                    renderRoutePanel(scenarios[0], false);
+                } else {
+                    document.getElementById('route-panel').innerHTML =
+                        '<div class="panel-title">선택 가능한 Truck 경로가 없습니다.</div>';
+                }
+
+                restartTrucks();
             }
 
             function drawStoreMarkers() {
+                var bounds = new kakao.maps.LatLngBounds();
+
                 stores.forEach(function(store) {
-                    if (store.latitude == null || store.longitude == null) {
-                        return;
-                    }
+                    if (store.latitude == null || store.longitude == null) return;
 
                     var position = new kakao.maps.LatLng(store.latitude, store.longitude);
 
-                    var marker = new kakao.maps.Marker({
-                        map: map,
-                        position: position
-                    });
+                    storeById[String(store.store_id)] = store;
+                    storeByName[String(store.store_name)] = store;
+                    bounds.extend(position);
 
-                    var storeName = store.store_name || store.name || "점포";
+                    var marker = new kakao.maps.Marker({ map: map, position: position });
+
+                    var storeName = store.store_name || "점포";
                     var storeType = store.type || "unknown";
 
                     var info = new kakao.maps.InfoWindow({
@@ -541,42 +502,30 @@ def show_kakao_map_with_truck(
                             '</div>'
                     });
 
-                    kakao.maps.event.addListener(marker, 'click', function() {
-                        selectedStoreName = storeName;
-                        info.open(map, marker);
-                        renderInventoryDashboard();
-                    });
+                    kakao.maps.event.addListener(marker, 'mouseover', function() { info.open(map, marker); });
+                    kakao.maps.event.addListener(marker, 'mouseout', function() { info.close(); });
                 });
+
+                if (stores.length > 0) map.setBounds(bounds);
             }
 
             function drawBaseRoutes() {
-                var storeCoord = {};
-
-                stores.forEach(function(store) {
-                    storeCoord[String(store.store_id)] = {
-                        lat: store.latitude,
-                        lng: store.longitude
-                    };
-                });
-
                 routes.forEach(function(route) {
-                    var fromId = String(route.from_id);
-                    var toId = String(route.to_id);
+                    var fromStore = storeById[String(route.from_id)];
+                    var toStore = storeById[String(route.to_id)];
 
-                    if (!(fromId in storeCoord) || !(toId in storeCoord)) {
-                        return;
-                    }
+                    if (!fromStore || !toStore) return;
 
                     var path = [
-                        new kakao.maps.LatLng(storeCoord[fromId].lat, storeCoord[fromId].lng),
-                        new kakao.maps.LatLng(storeCoord[toId].lat, storeCoord[toId].lng)
+                        new kakao.maps.LatLng(fromStore.latitude, fromStore.longitude),
+                        new kakao.maps.LatLng(toStore.latitude, toStore.longitude)
                     ];
 
                     var polyline = new kakao.maps.Polyline({
                         path: path,
                         strokeWeight: 2,
                         strokeColor: '#C9CDD2',
-                        strokeOpacity: 0.45,
+                        strokeOpacity: 0.25,
                         strokeStyle: 'solid'
                     });
 
@@ -584,158 +533,262 @@ def show_kakao_map_with_truck(
                 });
             }
 
-            function prepareTruckPath() {
-                if (!truckPath || truckPath.length < 2) {
-                    document.getElementById('truck-status').innerHTML = '추천 경로가 부족합니다.';
-                    return;
-                }
-
-                linePath = truckPath.map(function(p) {
-                    return new kakao.maps.LatLng(p.lat, p.lng);
-                });
-
-                var highlightLine = new kakao.maps.Polyline({
-                    path: linePath,
-                    strokeWeight: 7,
-                    strokeColor: '#FFD43B',
-                    strokeOpacity: 0.95,
-                    strokeStyle: 'solid'
-                });
-
-                highlightLine.setMap(map);
-
+            function prepareScenarioRoutes() {
                 var bounds = new kakao.maps.LatLngBounds();
 
-                linePath.forEach(function(pos) {
-                    bounds.extend(pos);
+                scenarios.forEach(function(scenario, idx) {
+                    var rawPath = scenario.path || [];
+                    var linePath = rawPath.map(function(p) {
+                        return new kakao.maps.LatLng(p.lat, p.lng);
+                    });
+
+                    if (linePath.length < 2) return;
+
+                    linePath.forEach(function(pos) { bounds.extend(pos); });
+
+                    var color = colors[idx % colors.length];
+
+                    var polyline = new kakao.maps.Polyline({
+                        path: linePath,
+                        strokeWeight: 5,
+                        strokeColor: color,
+                        strokeOpacity: 0.5,
+                        strokeStyle: 'solid'
+                    });
+
+                    polyline.setMap(map);
+
+                    kakao.maps.event.addListener(polyline, 'click', function(mouseEvent) {
+                        toggleRouteSelection(idx);
+                        lastClickedIndex = idx;
+                        renderRoutePanel(scenario, routeStates[idx] ? routeStates[idx].arrived : false);
+                    });
+
+                    kakao.maps.event.addListener(polyline, 'mouseover', function(mouseEvent) {
+                        polyline.setOptions({ strokeWeight: 9, strokeOpacity: 1.0 });
+                    });
+
+                    kakao.maps.event.addListener(polyline, 'mouseout', function() {
+                        updateRouteStyles();
+                    });
+
+                    var truckOverlay = new kakao.maps.CustomOverlay({
+                        position: linePath[0],
+                        content: '<div class="truck-marker">🚚 ' + (idx + 1) + '</div>',
+                        yAnchor: 0.5,
+                        xAnchor: 0.5,
+                        zIndex: 20 + idx
+                    });
+
+                    truckOverlay.setMap(null);
+
+                    routeStates.push({
+                        scenario: scenario,
+                        polyline: polyline,
+                        overlay: truckOverlay,
+                        linePath: linePath,
+                        segmentIndex: 0,
+                        progress: 0,
+                        arrived: false,
+                        color: color,
+                        idx: idx
+                    });
                 });
 
-                map.setBounds(bounds);
+                if (routeStates.length > 0) map.setBounds(bounds);
+            }
 
-                truckOverlay = new kakao.maps.CustomOverlay({
-                    position: linePath[0],
-                    content: '<div class="truck-marker">🚚</div>',
-                    yAnchor: 0.5,
-                    xAnchor: 0.5,
-                    zIndex: 10
+            function toggleRouteSelection(idx) {
+                if (selectedIndexes[idx]) {
+                    delete selectedIndexes[idx];
+                } else {
+                    selectedIndexes[idx] = true;
+                }
+
+                updateRouteStyles();
+                updateSelectedList();
+                restartTrucks();
+            }
+
+            function selectAllRoutes() {
+                selectedIndexes = {};
+                routeStates.forEach(function(state) {
+                    selectedIndexes[state.idx] = true;
                 });
 
-                truckOverlay.setMap(map);
+                updateRouteStyles();
+                updateSelectedList();
+                restartTrucks();
 
-                truckArrived = false;
-                document.getElementById('truck-status').innerHTML = '이동 중';
+                if (scenarios.length > 0) {
+                    lastClickedIndex = 0;
+                    renderRoutePanel(scenarios[0], false);
+                }
+            }
 
-                startTruck();
+            function clearSelectedRoutes() {
+                selectedIndexes = {};
+                stopTrucks();
+
+                routeStates.forEach(function(state) {
+                    state.overlay.setMap(null);
+                    state.arrived = false;
+                });
+
+                updateRouteStyles();
+                updateSelectedList();
+                document.getElementById('truck-status').innerHTML = '선택된 경로 없음';
+            }
+
+            function updateRouteStyles() {
+                routeStates.forEach(function(state) {
+                    var selected = !!selectedIndexes[state.idx];
+
+                    state.polyline.setOptions({
+                        strokeWeight: selected ? 9 : 4,
+                        strokeOpacity: selected ? 1.0 : 0.35,
+                        strokeColor: selected ? state.color : '#ADB5BD'
+                    });
+                });
+            }
+
+            function updateSelectedList() {
+                var selectedNames = [];
+
+                Object.keys(selectedIndexes).forEach(function(key) {
+                    var idx = Number(key);
+                    if (scenarios[idx]) {
+                        selectedNames.push((idx + 1) + '. ' + (scenarios[idx].label || '-'));
+                    }
+                });
+
+                document.getElementById('selected-count').innerHTML = String(selectedNames.length);
+
+                if (selectedNames.length === 0) {
+                    document.getElementById('selected-list').innerHTML = '선택된 경로가 없습니다. 지도 위 경로선을 클릭해 선택하세요.';
+                } else {
+                    document.getElementById('selected-list').innerHTML =
+                        '<b>선택된 경로</b><br>' + selectedNames.join('<br>');
+                }
+            }
+
+            function getTruckOffset(idx) {
+                // 같은 경로를 여러 Truck이 지나갈 때 완전히 겹쳐 보이지 않도록 아주 작은 시각적 오프셋 적용
+                var step = ((idx % 7) - 3) * 0.00008;
+                return { lat: step, lng: step };
+            }
+
+            function offsetLatLng(position, idx) {
+                var offset = getTruckOffset(idx);
+                return new kakao.maps.LatLng(position.getLat() + offset.lat, position.getLng() + offset.lng);
             }
 
             function interpolate(start, end, ratio) {
                 var lat = start.getLat() + (end.getLat() - start.getLat()) * ratio;
                 var lng = start.getLng() + (end.getLng() - start.getLng()) * ratio;
-
                 return new kakao.maps.LatLng(lat, lng);
             }
 
-            function startTruck() {
-                stopTruck();
+            function restartTrucks() {
+                stopTrucks();
 
-                segmentIndex = 0;
-                progress = 0;
-                isPaused = false;
-                truckArrived = false;
+                truckStates = [];
 
-                if (truckOverlay && linePath.length > 0) {
-                    truckOverlay.setPosition(linePath[0]);
+                routeStates.forEach(function(state) {
+                    state.segmentIndex = 0;
+                    state.progress = 0;
+                    state.arrived = false;
+
+                    if (selectedIndexes[state.idx]) {
+                        if (state.linePath.length > 0) {
+                            state.overlay.setPosition(offsetLatLng(state.linePath[0], state.idx));
+                            state.overlay.setMap(map);
+                            truckStates.push(state);
+                        }
+                    } else {
+                        state.overlay.setMap(null);
+                    }
+                });
+
+                if (truckStates.length === 0) {
+                    document.getElementById('truck-status').innerHTML = '선택된 경로 없음';
+                    return;
                 }
 
-                renderInventoryDashboard();
+                isPaused = false;
+                document.getElementById('truck-status').innerHTML = '선택한 여러 경로에서 Truck 동시 이동 중';
 
                 animationTimer = setInterval(function() {
-                    if (isPaused) {
-                        return;
-                    }
+                    if (isPaused) return;
 
-                    if (segmentIndex >= linePath.length - 1) {
-                        finishTruck();
-                        return;
-                    }
+                    var allArrived = true;
 
-                    progress += 0.005 * speedMultiplier;
+                    truckStates.forEach(function(state) {
+                        if (state.arrived) return;
 
-                    if (progress >= 1) {
-                        progress = 0;
-                        segmentIndex += 1;
+                        allArrived = false;
 
-                        if (segmentIndex >= linePath.length - 1) {
-                            finishTruck();
+                        if (state.segmentIndex >= state.linePath.length - 1) {
+                            state.arrived = true;
+                            state.overlay.setPosition(offsetLatLng(state.linePath[state.linePath.length - 1], state.idx));
                             return;
                         }
+
+                        state.progress += 0.005 * speedMultiplier;
+
+                        if (state.progress >= 1) {
+                            state.progress = 0;
+                            state.segmentIndex += 1;
+
+                            if (state.segmentIndex >= state.linePath.length - 1) {
+                                state.arrived = true;
+                                state.overlay.setPosition(offsetLatLng(state.linePath[state.linePath.length - 1], state.idx));
+                                return;
+                            }
+                        }
+
+                        var nextPosition = interpolate(
+                            state.linePath[state.segmentIndex],
+                            state.linePath[state.segmentIndex + 1],
+                            state.progress
+                        );
+
+                        state.overlay.setPosition(offsetLatLng(nextPosition, state.idx));
+                    });
+
+                    if (allArrived) {
+                        stopTrucks();
+                        document.getElementById('truck-status').innerHTML = '선택한 모든 Truck 도착 완료';
+
+                        if (lastClickedIndex !== null && scenarios[lastClickedIndex]) {
+                            renderRoutePanel(scenarios[lastClickedIndex], true);
+                        }
                     }
-
-                    var nextPosition = interpolate(
-                        linePath[segmentIndex],
-                        linePath[segmentIndex + 1],
-                        progress
-                    );
-
-                    truckOverlay.setPosition(nextPosition);
                 }, 20);
             }
 
-            function finishTruck() {
-                stopTruck();
-
-                if (truckOverlay && linePath.length > 0) {
-                    truckOverlay.setPosition(linePath[linePath.length - 1]);
-                }
-
-                truckArrived = true;
-                document.getElementById('truck-status').innerHTML = '도착 완료 - Inventory 반영됨';
-                renderInventoryDashboard();
-            }
-
-            function stopTruck() {
+            function stopTrucks() {
                 if (animationTimer !== null) {
                     clearInterval(animationTimer);
                     animationTimer = null;
                 }
             }
 
-            function restartTruck() {
-                if (!truckOverlay || linePath.length < 2) {
-                    return;
-                }
-
-                truckArrived = false;
-                document.getElementById('truck-status').innerHTML = '이동 중';
-                startTruck();
-            }
-
-            function pauseTruck() {
+            function pauseTrucks() {
                 isPaused = true;
                 document.getElementById('truck-status').innerHTML = '일시정지';
             }
 
-            function resumeTruck() {
+            function resumeTrucks() {
                 isPaused = false;
-                document.getElementById('truck-status').innerHTML = '이동 중';
-            }
-
-            function getInventoryItems() {
-                if (!inventoryChanges || !inventoryChanges.store_inventory) {
-                    return [];
-                }
-
-                return Object.keys(inventoryChanges.store_inventory).map(function(storeName) {
-                    var item = inventoryChanges.store_inventory[storeName];
-                    item.store_name = storeName;
-                    return item;
-                });
+                document.getElementById('truck-status').innerHTML = '선택한 여러 경로에서 Truck 동시 이동 중';
             }
 
             function getMaxQty(items) {
                 var maxQty = 1;
 
-                items.forEach(function(item) {
+                Object.keys(items || {}).forEach(function(storeName) {
+                    var item = items[storeName];
                     maxQty = Math.max(maxQty, Number(item.before || 0));
                     maxQty = Math.max(maxQty, Number(item.after || 0));
                 });
@@ -744,106 +797,58 @@ def show_kakao_map_with_truck(
             }
 
             function pct(value, maxQty) {
-                if (!maxQty || maxQty <= 0) {
-                    return 0;
-                }
-
+                if (!maxQty || maxQty <= 0) return 0;
                 return Math.max(4, Math.min(100, (Number(value || 0) / maxQty) * 100));
             }
 
-            function renderInventoryDashboard() {
-                var panel = document.getElementById('inventory-panel');
-                var items = getInventoryItems();
-
-                if (items.length === 0) {
-                    panel.innerHTML =
-                        '<div class="dashboard-header">' +
-                            '<div class="dashboard-title">📦 Inventory 변화 대시보드</div>' +
-                        '</div>' +
-                        '<div class="summary-box">Inventory 변화 데이터가 없습니다.</div>';
-                    return;
-                }
-
-                var maxQty = getMaxQty(items);
-                var truckStatusText = truckArrived ? 'Truck 도착 완료 / 이동 후 재고 반영' : 'Truck 이동 전 또는 이동 중 / 이동 전 재고 기준';
+            function renderRoutePanel(scenario, arrived) {
+                var panel = document.getElementById('route-panel');
+                var inv = scenario.store_inventory || {};
+                var maxQty = getMaxQty(inv);
 
                 var html = '';
+                html += '<div class="panel-title">🛣 클릭한 경로 결과: ' + (scenario.label || '-') + '</div>';
 
-                html += '<div class="dashboard-header">';
-                html += '<div class="dashboard-title">📦 Inventory 변화 대시보드</div>';
-                html += '<div class="status-badge">' + truckStatusText + '</div>';
+                html += '<div class="route-grid">';
+                html += '<div class="route-mini"><div class="route-label">상품명</div><div class="route-value">' + (scenario.product_name || '-') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">경로</div><div class="route-value">' + (scenario.source_store || '-') + ' → ' + (scenario.target_store || '-') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">추천 수량</div><div class="route-value">' + (scenario.move_qty || 0) + '개</div></div>';
+                html += '<div class="route-mini"><div class="route-label">예상 비용</div><div class="route-value">' + (scenario.estimated_cost || '-') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">추천 방식</div><div class="route-value">' + (scenario.recommended_path || '-') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">휴리스틱 점수</div><div class="route-value">' + (scenario.heuristic_score || '-') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">Truck 상태</div><div class="route-value">' + (arrived ? '도착 완료' : '이동 전/이동 중') + '</div></div>';
+                html += '<div class="route-mini"><div class="route-label">경로 노드</div><div class="route-value">' + (scenario.path_names || []).join(' → ') + '</div></div>';
                 html += '</div>';
 
-                html += '<div class="summary-box">';
-                html += '상품명: <b>' + (inventoryChanges.product_name || '-') + '</b><br>';
-                html += '이동 수량: <b>' + (inventoryChanges.move_qty || 0) + '개</b><br>';
-                html += '경로: <b>' + (inventoryChanges.source_store || '-') + ' → ' + (inventoryChanges.target_store || '-') + '</b><br>';
-                html += '추천 방식: <b>' + (inventoryChanges.recommended_path || '-') + '</b>';
+                html += '<div class="reason-box">';
+                html += '<b>추천 이유:</b> ' + (scenario.reason || '-') + '<br>';
+                html += '<b>선택 상태:</b> ' + (selectedIndexes[scenarios.indexOf(scenario)] ? '선택됨' : '선택 안 됨') + '<br>';
+                html += '<b>안내:</b> 지도 위 경로선을 클릭하면 선택/해제되고, 해당 경로의 결과가 이 패널에 표시됩니다.';
                 html += '</div>';
 
-                html += '<div style="height:14px;"></div>';
+                html += '<div class="panel-title" style="font-size:18px;">📦 클릭 경로 Inventory 변화</div>';
                 html += '<div class="inventory-grid">';
 
-                items.forEach(function(item) {
+                Object.keys(inv).forEach(function(storeName) {
+                    var item = inv[storeName];
                     var beforeQty = Number(item.before || 0);
                     var afterQty = Number(item.after || 0);
                     var changeQty = Number(item.change || 0);
-                    var currentQty = truckArrived ? afterQty : beforeQty;
-
                     var changeClass = changeQty >= 0 ? 'change-plus' : 'change-minus';
                     var changeText = changeQty >= 0 ? '+' + changeQty : String(changeQty);
 
-                    var selectedClass = selectedStoreName === item.store_name ? ' selected' : '';
-
-                    html += '<div class="inventory-card' + selectedClass + '">';
-                    html += '<div class="store-name">' + item.store_name + '</div>';
-                    html += '<div class="store-role">' + item.role + ' / ' + item.product_name + '</div>';
-
-                    html += '<div class="metric-row">';
-                    html += '<div class="mini-metric">';
-                    html += '<div class="mini-label">이동 전</div>';
-                    html += '<div class="mini-value">' + beforeQty + '개</div>';
-                    html += '</div>';
-
-                    html += '<div class="mini-metric">';
-                    html += '<div class="mini-label">이동 후</div>';
-                    html += '<div class="mini-value">' + afterQty + '개</div>';
-                    html += '</div>';
-
-                    html += '<div class="mini-metric">';
-                    html += '<div class="mini-label">변화량</div>';
-                    html += '<div class="mini-value ' + changeClass + '">' + changeText + '개</div>';
-                    html += '</div>';
-                    html += '</div>';
-
-                    html += '<div class="bar-section">';
-
+                    html += '<div class="inventory-card">';
+                    html += '<div class="store-name">' + storeName + '</div>';
+                    html += '<div class="store-role">' + (item.role || '-') + ' / ' + (item.product_name || '-') + '</div>';
                     html += '<div class="bar-label"><span>이동 전 재고</span><b>' + beforeQty + '개</b></div>';
-                    html += '<div class="bar-track">';
-                    html += '<div class="bar-before" style="width:' + pct(beforeQty, maxQty) + '%;"></div>';
-                    html += '</div>';
-
+                    html += '<div class="bar-track"><div class="bar-before" style="width:' + pct(beforeQty, maxQty) + '%;"></div></div>';
                     html += '<div class="bar-label"><span>이동 후 재고</span><b>' + afterQty + '개</b></div>';
-                    html += '<div class="bar-track">';
-                    html += '<div class="bar-after" style="width:' + pct(afterQty, maxQty) + '%;"></div>';
-                    html += '</div>';
-
-                    html += '<div class="bar-label"><span>현재 반영 재고</span><b>' + currentQty + '개</b></div>';
-                    html += '<div class="bar-track">';
-                    html += '<div class="bar-current" style="width:' + pct(currentQty, maxQty) + '%;"></div>';
-                    html += '</div>';
-
-                    html += '</div>';
+                    html += '<div class="bar-track"><div class="bar-after" style="width:' + pct(afterQty, maxQty) + '%;"></div></div>';
+                    html += '<div>변화량: <span class="' + changeClass + '">' + changeText + '개</span></div>';
                     html += '</div>';
                 });
 
                 html += '</div>';
-
-                html += '<div class="summary-box">';
-                html += '마커를 클릭하면 해당 점포 카드가 노란색 테두리로 강조됩니다. ';
-                html += 'Truck이 도착하면 현재 반영 재고가 이동 후 재고로 바뀝니다.';
-                html += '</div>';
-
                 panel.innerHTML = html;
             }
         </script>
@@ -856,8 +861,43 @@ def show_kakao_map_with_truck(
     html = html.replace("__CENTER_LNG__", str(center_lng))
     html = html.replace("__STORES_JSON__", stores_json)
     html = html.replace("__ROUTES_JSON__", routes_json)
-    html = html.replace("__TRUCK_PATH_JSON__", truck_path_json)
-    html = html.replace("__INVENTORY_CHANGES_JSON__", inventory_changes_json)
+    html = html.replace("__SCENARIOS_JSON__", scenarios_json)
     html = html.replace("__SPEED__", str(speed_multiplier))
+    html = html.replace("__DEFAULT_SELECTED_COUNT__", str(default_selected_count))
 
-    components.html(html, height=1050, scrolling=True)
+    components.html(html, height=1060, scrolling=True)
+
+
+def show_kakao_map_with_truck(
+    stores,
+    routes,
+    kakao_js_key,
+    truck_path,
+    speed_multiplier=1.0,
+    inventory_changes=None,
+):
+    inventory_changes = inventory_changes or {}
+
+    scenario = {
+        "label": inventory_changes.get("product_name", "Truck 이동 경로"),
+        "product_name": inventory_changes.get("product_name", "-"),
+        "source_store": inventory_changes.get("source_store", "-"),
+        "target_store": inventory_changes.get("target_store", "-"),
+        "move_qty": inventory_changes.get("move_qty", 0),
+        "recommended_path": inventory_changes.get("recommended_path", "-"),
+        "estimated_cost": inventory_changes.get("estimated_cost", "-"),
+        "heuristic_score": inventory_changes.get("heuristic_score", "-"),
+        "reason": inventory_changes.get("reason", "-"),
+        "path_names": [p.get("name", "") for p in truck_path],
+        "path": truck_path,
+        "store_inventory": inventory_changes.get("store_inventory", {}),
+    }
+
+    show_kakao_map_with_multi_trucks(
+        stores=stores,
+        routes=routes,
+        kakao_js_key=kakao_js_key,
+        truck_scenarios=[scenario],
+        speed_multiplier=speed_multiplier,
+        default_selected_count=1,
+    )

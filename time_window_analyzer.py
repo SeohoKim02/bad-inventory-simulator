@@ -2,123 +2,241 @@ import pandas as pd
 from datetime import time
 
 
-def time_to_minutes(value):
-    if pd.isna(value):
+def _is_empty(value):
+    return pd.isna(value) or value == "" or value is None
+
+
+def _time_to_minutes(value):
+    if _is_empty(value):
         return None
 
     if isinstance(value, time):
         return value.hour * 60 + value.minute
 
-    value_str = str(value).strip()
+    if isinstance(value, (int, float)):
+        if pd.isna(value):
+            return None
+        return int(value)
 
-    # 엑셀에서 "06:00:00"처럼 들어오는 경우 처리
-    parts = value_str.split(":")
-    if len(parts) >= 2:
-        hour = int(parts[0])
-        minute = int(parts[1])
-        return hour * 60 + minute
+    text = str(value).strip()
+
+    if ":" in text:
+        try:
+            hour, minute = text.split(":")[:2]
+            return int(hour) * 60 + int(minute)
+        except Exception:
+            return None
+
+    try:
+        return int(float(text))
+    except Exception:
+        return None
+
+
+def minutes_to_time_text(minutes):
+    if minutes is None or pd.isna(minutes):
+        return "-"
+
+    try:
+        minutes = int(minutes)
+    except Exception:
+        return "-"
+
+    minutes = minutes % (24 * 60)
+    hour = minutes // 60
+    minute = minutes % 60
+
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _parse_available_time(value, default_value):
+    parsed = _time_to_minutes(value)
+
+    if parsed is None:
+        return default_value
+
+    return parsed
+
+
+def _get_travel_time(row):
+    time_columns = [
+        "travel_time_min",
+        "time_min",
+        "duration_min",
+        "moving_time_min",
+    ]
+
+    for col in time_columns:
+        if col in row.index:
+            value = pd.to_numeric(row[col], errors="coerce")
+
+            if pd.notna(value):
+                return float(value)
+
+    distance_columns = [
+        "distance_km",
+        "network_distance_km",
+    ]
+
+    for col in distance_columns:
+        if col in row.index:
+            value = pd.to_numeric(row[col], errors="coerce")
+
+            if pd.notna(value):
+                distance = float(value)
+
+                # 평균 속도 40km/h 가정
+                estimated_time = distance * 1.5
+
+                # 최소 5분
+                return max(estimated_time, 5)
 
     return None
 
 
-def minutes_to_time_text(minutes):
-    minutes = int(minutes)
-    hour = minutes // 60
-    minute = minutes % 60
-    return f"{hour:02d}:{minute:02d}"
+def _get_target_store_name(row):
+    possible_columns = [
+        "retailer_name",
+        "target_store",
+        "to_store",
+        "store_name",
+    ]
 
+    for col in possible_columns:
+        if col in row.index and not _is_empty(row[col]):
+            return row[col]
 
-def is_within_window(target_min, start_min, end_min):
-    if start_min is None or end_min is None:
-        return False
-
-    # 일단 같은 날 기준으로 계산
-    return start_min <= target_min <= end_min
+    return None
 
 
 def analyze_trade_time_windows(cutline_result, stores, departure_time):
-    stores_data = stores.copy()
-    route_data = cutline_result.copy()
+    if cutline_result is None or cutline_result.empty:
+        return pd.DataFrame(), "거래가능시간을 판별할 경로 데이터가 없습니다."
 
-    required_columns = ["available_start", "available_end"]
+    if stores is None or stores.empty:
+        return pd.DataFrame(), "stores 데이터가 없습니다."
 
-    for col in required_columns:
-        if col not in stores_data.columns:
-            return None, f"stores 시트에 '{col}' 열이 없습니다."
+    if "store_name" not in stores.columns:
+        return pd.DataFrame(), "stores 시트에 store_name 열이 필요합니다."
 
-    departure_min = departure_time.hour * 60 + departure_time.minute
-
-    time_info = stores_data[
-        ["store_id", "available_start", "available_end"]
-    ].copy()
-
-    time_info["available_start_min"] = time_info["available_start"].apply(time_to_minutes)
-    time_info["available_end_min"] = time_info["available_end"].apply(time_to_minutes)
-
-    start_map = dict(zip(time_info["store_id"], time_info["available_start_min"]))
-    end_map = dict(zip(time_info["store_id"], time_info["available_end_min"]))
-
-    result_rows = []
-
-    for _, row in route_data.iterrows():
-        dc_id = row["dc_id"]
-        retailer_id = row["retailer_id"]
-
-        dc_start = start_map.get(dc_id)
-        dc_end = end_map.get(dc_id)
-
-        retailer_start = start_map.get(retailer_id)
-        retailer_end = end_map.get(retailer_id)
-
-        travel_time_min = row["travel_time_min"]
-        arrival_min = departure_min + travel_time_min
-
-        depart_possible = is_within_window(departure_min, dc_start, dc_end)
-        arrival_same_day = arrival_min <= 24 * 60
-        arrival_possible = (
-            arrival_same_day
-            and is_within_window(arrival_min, retailer_start, retailer_end)
+    if "available_start" not in stores.columns or "available_end" not in stores.columns:
+        return (
+            pd.DataFrame(),
+            "stores 시트에 available_start, available_end 열이 필요합니다.",
         )
 
-        if depart_possible and arrival_possible:
-            time_status = "가능"
-            time_reason = "DC 출고시간과 점포 입고시간을 모두 만족"
-        elif not depart_possible:
-            time_status = "불가능"
-            time_reason = "DC 출고 가능 시간이 아님"
-        elif not arrival_same_day:
-            time_status = "불가능"
-            time_reason = "도착 시간이 당일 범위를 초과"
+    departure_min = _time_to_minutes(departure_time)
+
+    if departure_min is None:
+        departure_min = 9 * 60
+
+    store_time_map = {}
+
+    for _, store_row in stores.iterrows():
+        store_name = store_row["store_name"]
+
+        start_min = _parse_available_time(
+            store_row.get("available_start"),
+            0,
+        )
+
+        end_min = _parse_available_time(
+            store_row.get("available_end"),
+            24 * 60 - 1,
+        )
+
+        store_time_map[store_name] = {
+            "available_start_min": start_min,
+            "available_end_min": end_min,
+            "available_start": minutes_to_time_text(start_min),
+            "available_end": minutes_to_time_text(end_min),
+        }
+
+    result = cutline_result.copy()
+
+    departure_times = []
+    travel_times = []
+    arrival_times = []
+    available_starts = []
+    available_ends = []
+    time_statuses = []
+    final_statuses = []
+    time_reasons = []
+
+    for _, row in result.iterrows():
+        target_store_name = _get_target_store_name(row)
+        travel_time = _get_travel_time(row)
+
+        departure_times.append(minutes_to_time_text(departure_min))
+        travel_times.append(travel_time)
+
+        if target_store_name not in store_time_map:
+            arrival_times.append("-")
+            available_starts.append("-")
+            available_ends.append("-")
+            time_statuses.append("확인 불가")
+            final_statuses.append("불가능")
+            time_reasons.append("대상 점포의 거래가능시간 정보를 찾을 수 없습니다.")
+            continue
+
+        store_time = store_time_map[target_store_name]
+
+        available_start_min = store_time["available_start_min"]
+        available_end_min = store_time["available_end_min"]
+
+        available_starts.append(store_time["available_start"])
+        available_ends.append(store_time["available_end"])
+
+        if travel_time is None or pd.isna(travel_time):
+            arrival_times.append("-")
+            time_statuses.append("확인 불가")
+            final_statuses.append("불가능")
+            time_reasons.append("이동시간 데이터가 없어 도착시간을 계산할 수 없습니다.")
+            continue
+
+        arrival_min = departure_min + travel_time
+        arrival_text = minutes_to_time_text(arrival_min)
+
+        arrival_times.append(arrival_text)
+
+        arrival_min_day = int(arrival_min) % (24 * 60)
+
+        if available_start_min <= available_end_min:
+            is_available = available_start_min <= arrival_min_day <= available_end_min
         else:
-            time_status = "불가능"
-            time_reason = "점포 입고 가능 시간이 아님"
+            is_available = (
+                arrival_min_day >= available_start_min
+                or arrival_min_day <= available_end_min
+            )
 
-        cutline_status = row.get("cutline_status", "확인불가")
+        if is_available:
+            time_status = "가능"
+            reason = "도착 예정 시간이 거래가능시간 안에 있습니다."
+        else:
+            time_status = "시간 불가"
+            reason = "도착 예정 시간이 거래가능시간을 벗어났습니다."
 
-        final_status = (
-            "가능"
-            if cutline_status == "가능" and time_status == "가능"
-            else "불가능"
-        )
+        cutline_status = str(row.get("cutline_status", ""))
 
-        result_rows.append(
-            {
-                "dc_name": row["dc_name"],
-                "retailer_name": row["retailer_name"],
-                "product_name": row["product_name"],
-                "category": row["category"],
-                "distance_km": row["distance_km"],
-                "distance_cutline_km": row["distance_cutline_km"],
-                "travel_time_min": travel_time_min,
-                "departure_time": minutes_to_time_text(departure_min),
-                "arrival_time": minutes_to_time_text(arrival_min),
-                "cutline_status": cutline_status,
-                "time_status": time_status,
-                "final_status": final_status,
-                "time_reason": time_reason,
-            }
-        )
+        if "불가능" in cutline_status or "초과" in cutline_status:
+            final_status = "불가능"
+            reason = "거리 컷라인 조건을 만족하지 못합니다."
+        elif time_status == "가능":
+            final_status = "가능"
+        else:
+            final_status = "불가능"
 
-    result = pd.DataFrame(result_rows)
+        time_statuses.append(time_status)
+        final_statuses.append(final_status)
+        time_reasons.append(reason)
+
+    result["departure_time"] = departure_times
+    result["travel_time_min"] = travel_times
+    result["arrival_time"] = arrival_times
+    result["available_start"] = available_starts
+    result["available_end"] = available_ends
+    result["time_status"] = time_statuses
+    result["final_status"] = final_statuses
+    result["time_reason"] = time_reasons
 
     return result, None

@@ -1,10 +1,194 @@
+import math
 import pandas as pd
 
 
-def safe_float(value, default=0):
-    if pd.isna(value):
+def safe_float(value, default=0.0):
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except Exception:
         return default
-    return float(value)
+
+
+def safe_int(value, default=0):
+    try:
+        if pd.isna(value):
+            return default
+        return int(float(value))
+    except Exception:
+        return default
+
+
+def get_first_existing_value(row, columns, default=0):
+    for col in columns:
+        if col in row.index:
+            value = row[col]
+            if not pd.isna(value):
+                return value
+    return default
+
+
+def get_transfer_cost(row):
+    recommended_path = str(row.get("recommended_path", ""))
+
+    if "직접" in recommended_path:
+        return safe_float(row.get("direct_cost", row.get("transfer_cost", 0)))
+
+    if "DC" in recommended_path or "경유" in recommended_path:
+        return safe_float(row.get("via_cost", row.get("transfer_cost", 0)))
+
+    return safe_float(
+        get_first_existing_value(
+            row,
+            [
+                "transfer_cost",
+                "network_cost",
+                "estimated_cost",
+                "direct_cost",
+                "via_cost",
+            ],
+            default=0,
+        )
+    )
+
+
+def find_source_inventory(inventory, stores, source_store_name, product_name):
+    """
+    source_store와 product_name에 해당하는 inventory 행을 찾는다.
+    데이터 구조가 조금 달라도 최대한 안전하게 찾도록 구성.
+    """
+
+    if inventory is None or inventory.empty:
+        return None
+
+    inv = inventory.copy()
+
+    # inventory에 store_name이 있으면 바로 사용
+    if "store_name" in inv.columns:
+        store_matched = inv[inv["store_name"] == source_store_name]
+    else:
+        store_matched = inv
+
+        if stores is not None and not stores.empty:
+            if "store_name" in stores.columns and "store_id" in stores.columns:
+                store_id_map = dict(zip(stores["store_name"], stores["store_id"]))
+                source_store_id = store_id_map.get(source_store_name)
+
+                if source_store_id is not None and "store_id" in inv.columns:
+                    store_matched = inv[inv["store_id"] == source_store_id]
+
+    if store_matched.empty:
+        return None
+
+    # inventory에 product_name이 있으면 상품명으로도 필터링
+    if "product_name" in store_matched.columns:
+        product_matched = store_matched[store_matched["product_name"] == product_name]
+
+        if not product_matched.empty:
+            return product_matched.iloc[0]
+
+    # product_name이 없으면 같은 점포의 첫 번째 행 사용
+    return store_matched.iloc[0]
+
+
+def estimate_unit_cost(source_inv, transfer_row):
+    """
+    unit_cost가 없을 때도 앱이 멈추지 않도록 원가를 추정한다.
+    우선순위:
+    1. inventory 행의 unit_cost 계열 열
+    2. transfer 결과 행의 unit_cost 계열 열
+    3. 기본값 1000원
+    """
+
+    unit_cost_columns = [
+        "unit_cost",
+        "cost",
+        "product_cost",
+        "item_cost",
+        "price",
+        "unit_price",
+    ]
+
+    if source_inv is not None:
+        value = get_first_existing_value(source_inv, unit_cost_columns, default=None)
+        if value is not None:
+            return safe_float(value, 1000)
+
+    value = get_first_existing_value(transfer_row, unit_cost_columns, default=None)
+    if value is not None:
+        return safe_float(value, 1000)
+
+    return 1000.0
+
+
+def estimate_daily_holding_cost(source_inv, transfer_row):
+    holding_columns = [
+        "daily_holding_cost",
+        "holding_cost",
+        "storage_cost",
+        "daily_storage_cost",
+    ]
+
+    if source_inv is not None:
+        value = get_first_existing_value(source_inv, holding_columns, default=None)
+        if value is not None:
+            return safe_float(value, 20)
+
+    value = get_first_existing_value(transfer_row, holding_columns, default=None)
+    if value is not None:
+        return safe_float(value, 20)
+
+    return 20.0
+
+
+def calculate_promotion_cost(
+    promotion_type,
+    suggested_qty,
+    unit_cost,
+    daily_holding_cost,
+    promotion_discount_rate,
+    promotion_sales_increase_rate,
+    promotion_fixed_cost,
+):
+    suggested_qty = safe_int(suggested_qty, 0)
+    unit_cost = safe_float(unit_cost, 1000)
+    daily_holding_cost = safe_float(daily_holding_cost, 20)
+
+    discount_rate = safe_float(promotion_discount_rate, 0) / 100
+    sales_increase_rate = safe_float(promotion_sales_increase_rate, 0) / 100
+    fixed_cost = safe_float(promotion_fixed_cost, 0)
+
+    expected_extra_sales = suggested_qty * sales_increase_rate
+    holding_saving = expected_extra_sales * daily_holding_cost
+
+    if promotion_type == "1+1 프로모션":
+        # 1+1은 판매 촉진을 위해 대략 절반 수준의 상품 원가 부담이 생긴다고 가정
+        promotion_loss = math.ceil(suggested_qty / 2) * unit_cost
+        promotion_net_cost = promotion_loss + fixed_cost - holding_saving
+
+        formula = (
+            f"1+1 프로모션 순비용 = "
+            f"증정 원가({math.ceil(suggested_qty / 2)}개 × {unit_cost:,.0f}원) "
+            f"+ 고정비({fixed_cost:,.0f}원) "
+            f"- 보관비 절감({holding_saving:,.0f}원) "
+            f"= {promotion_net_cost:,.0f}원"
+        )
+
+    else:
+        # 할인 프로모션
+        discount_loss = suggested_qty * unit_cost * discount_rate
+        promotion_net_cost = discount_loss + fixed_cost - holding_saving
+
+        formula = (
+            f"할인 프로모션 순비용 = "
+            f"할인 손실({suggested_qty}개 × {unit_cost:,.0f}원 × {discount_rate * 100:.1f}%) "
+            f"+ 고정비({fixed_cost:,.0f}원) "
+            f"- 보관비 절감({holding_saving:,.0f}원) "
+            f"= {promotion_net_cost:,.0f}원"
+        )
+
+    return max(promotion_net_cost, 0), formula
 
 
 def analyze_promotion_vs_transfer(
@@ -16,120 +200,96 @@ def analyze_promotion_vs_transfer(
     promotion_sales_increase_rate,
     promotion_fixed_cost,
 ):
-    stores_data = stores.copy()
-    inventory_data = inventory.copy()
-    transfer_data = transfer_path_result.copy()
+    """
+    프로모션 비용과 재배치 비용을 비교한다.
 
-    if transfer_data.empty:
+    입력:
+    - stores
+    - inventory
+    - transfer_path_result
+    - promotion_type
+    - promotion_discount_rate
+    - promotion_sales_increase_rate
+    - promotion_fixed_cost
+
+    출력:
+    - promotion_result DataFrame
+    """
+
+    if transfer_path_result is None or transfer_path_result.empty:
         return pd.DataFrame()
 
-    store_name_to_id = dict(zip(stores_data["store_name"], stores_data["store_id"]))
+    results = []
 
-    result_rows = []
+    for _, row in transfer_path_result.iterrows():
+        recommended_path = str(row.get("recommended_path", ""))
 
-    for _, row in transfer_data.iterrows():
-        product_id = row["product_id"]
-        product_name = row["product_name"]
-        source_store_name = row["source_store"]
-        target_store_name = row["target_store"]
-
-        source_store_id = store_name_to_id.get(source_store_name)
-
-        if source_store_id is None:
+        if recommended_path == "이동 비추천":
             continue
 
-        inv_match = inventory_data[
-            (inventory_data["store_id"] == source_store_id)
-            & (inventory_data["product_id"] == product_id)
-        ]
+        product_name = row.get("product_name", "-")
+        source_store = row.get("source_store", "-")
+        target_store = row.get("target_store", "-")
 
-        if inv_match.empty:
-            continue
-
-        source_inv = inv_match.iloc[0]
-
-        suggested_qty = int(row["suggested_transfer_qty"])
-        unit_cost = safe_float(source_inv["unit_cost"])
-        daily_holding_cost = safe_float(source_inv["daily_holding_cost"])
-        sales_30d = safe_float(source_inv["sales_30d"])
-
-        # 현재 상태로 유지했을 때 보관비
-        if sales_30d > 0:
-            current_cover_days = suggested_qty / (sales_30d / 30)
-        else:
-            current_cover_days = 999
-
-        current_holding_cost = (
-            suggested_qty * daily_holding_cost * min(current_cover_days, 30)
+        suggested_qty = safe_int(
+            get_first_existing_value(
+                row,
+                [
+                    "suggested_transfer_qty",
+                    "suggested_qty",
+                    "transfer_qty",
+                    "qty",
+                ],
+                default=0,
+            ),
+            default=0,
         )
 
-        # 프로모션 후 예상 판매량
-        improved_sales_30d = sales_30d * (1 + promotion_sales_increase_rate / 100)
+        transfer_cost = get_transfer_cost(row)
 
-        if improved_sales_30d > 0:
-            promotion_cover_days = suggested_qty / (improved_sales_30d / 30)
-        else:
-            promotion_cover_days = 999
-
-        promotion_holding_cost = (
-            suggested_qty * daily_holding_cost * min(promotion_cover_days, 30)
+        source_inv = find_source_inventory(
+            inventory,
+            stores,
+            source_store,
+            product_name,
         )
 
-        saved_holding_cost = max(0, current_holding_cost - promotion_holding_cost)
+        unit_cost = estimate_unit_cost(source_inv, row)
+        daily_holding_cost = estimate_daily_holding_cost(source_inv, row)
 
-        # 프로모션 비용 계산
-        if promotion_type == "1+1 프로모션":
-            promotion_loss = suggested_qty * unit_cost * 0.5
+        promotion_net_cost, promotion_formula = calculate_promotion_cost(
+            promotion_type=promotion_type,
+            suggested_qty=suggested_qty,
+            unit_cost=unit_cost,
+            daily_holding_cost=daily_holding_cost,
+            promotion_discount_rate=promotion_discount_rate,
+            promotion_sales_increase_rate=promotion_sales_increase_rate,
+            promotion_fixed_cost=promotion_fixed_cost,
+        )
+
+        if transfer_cost <= promotion_net_cost:
+            final_decision = "재배치 추천"
+            decision_reason = "프로모션 순비용이 재배치 비용보다 높습니다."
         else:
-            promotion_loss = suggested_qty * unit_cost * (promotion_discount_rate / 100)
-
-        promotion_total_cost = promotion_loss + promotion_fixed_cost
-        promotion_net_cost = promotion_total_cost - saved_holding_cost
-
-        # 재배치 비용 선택
-        recommended_path = row["recommended_path"]
-
-        if recommended_path == "직접 이동 추천":
-            transfer_cost = row["direct_cost"]
-        elif recommended_path == "DC 경유 이동 추천":
-            transfer_cost = row["via_cost"]
-        else:
-            transfer_cost = None
-
-        if transfer_cost is None or pd.isna(transfer_cost):
-            final_decision = "프로모션 추천"
-            decision_reason = "이동 가능한 경로가 없어 프로모션 처리가 더 적합합니다."
-        elif promotion_net_cost <= transfer_cost:
             final_decision = "프로모션 추천"
             decision_reason = "프로모션 순비용이 재배치 비용보다 낮습니다."
-        else:
-            final_decision = "재배치 추천"
-            decision_reason = "재배치 비용이 프로모션 순비용보다 낮습니다."
 
-        formula = (
-            f"프로모션 순비용 = "
-            f"프로모션 손실 {round(promotion_total_cost, 1)}원 "
-            f"- 절감 보관비 {round(saved_holding_cost, 1)}원 "
-            f"= {round(promotion_net_cost, 1)}원"
-        )
-
-        result_rows.append(
+        results.append(
             {
                 "product_name": product_name,
-                "source_store": source_store_name,
-                "target_store": target_store_name,
+                "source_store": source_store,
+                "target_store": target_store,
                 "suggested_qty": suggested_qty,
                 "recommended_transfer_path": recommended_path,
-                "transfer_cost": round(transfer_cost, 1)
-                if transfer_cost is not None and not pd.isna(transfer_cost)
-                else None,
+                "transfer_cost": round(transfer_cost, 0),
                 "promotion_type": promotion_type,
-                "promotion_net_cost": round(promotion_net_cost, 1),
-                "saved_holding_cost": round(saved_holding_cost, 1),
+                "promotion_net_cost": round(promotion_net_cost, 0),
                 "final_decision": final_decision,
                 "decision_reason": decision_reason,
-                "promotion_formula": formula,
+                "promotion_formula": promotion_formula,
+                "unit_cost_used": round(unit_cost, 0),
+                "daily_holding_cost_used": round(daily_holding_cost, 0),
             }
         )
 
-    return pd.DataFrame(result_rows)
+    return pd.DataFrame(results)

@@ -1,8 +1,10 @@
-import streamlit as st
-import pandas as pd
+
 import html as html_lib
 from datetime import time
 from numbers import Number
+
+import pandas as pd
+import streamlit as st
 
 from calculator import calculate_inventory_analysis
 from discount_analyzer import analyze_discount_options
@@ -23,6 +25,11 @@ except ImportError:
     show_kakao_map_with_truck = None
 
 try:
+    from kakao_map_viewer import show_kakao_map_with_multi_trucks
+except ImportError:
+    show_kakao_map_with_multi_trucks = None
+
+try:
     from heuristic_optimizer import add_heuristic_scores, select_greedy_best_candidate
 except ImportError:
     add_heuristic_scores = None
@@ -35,7 +42,7 @@ except ImportError:
 st.set_page_config(
     page_title="Varo",
     page_icon="📦",
-    layout="wide"
+    layout="wide",
 )
 
 
@@ -96,7 +103,7 @@ def apply_global_style():
             }
 
             .hero-sub {
-                max-width: 860px;
+                max-width: 900px;
                 margin-top: 10px;
             }
 
@@ -352,18 +359,6 @@ def apply_global_style():
                 color: #333;
             }
 
-            .mini-guide {
-                padding: 18px 20px;
-                border-radius: 20px;
-                background: #ffffff;
-                border: 1px solid #eeeeee;
-                color: #444;
-                line-height: 1.7;
-                margin-top: 14px;
-                margin-bottom: 18px;
-                box-shadow: 0 6px 18px rgba(0,0,0,0.035);
-            }
-
             div[data-testid="stMetric"] {
                 background: #ffffff;
                 border: 1px solid #eeeeee;
@@ -398,7 +393,7 @@ def apply_global_style():
             }
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -435,17 +430,22 @@ def format_money(value):
 
 def apply_heuristic_and_greedy(final_recommendations):
     if final_recommendations is None or final_recommendations.empty:
-        return final_recommendations, None
+        return pd.DataFrame(), None
 
     if add_heuristic_scores is None or select_greedy_best_candidate is None:
         temp = final_recommendations.copy()
-        temp["_estimated_cost_numeric"] = pd.to_numeric(temp["estimated_cost"], errors="coerce")
 
-        if temp["_estimated_cost_numeric"].notna().any():
-            temp = temp.sort_values("_estimated_cost_numeric", ascending=True).reset_index(drop=True)
+        if "estimated_cost" in temp.columns:
+            temp["_estimated_cost_numeric"] = pd.to_numeric(temp["estimated_cost"], errors="coerce")
+            if temp["_estimated_cost_numeric"].notna().any():
+                temp = temp.sort_values("_estimated_cost_numeric", ascending=True)
 
+        temp = temp.reset_index(drop=True)
         temp["greedy_rank"] = temp.index + 1
         temp["is_greedy_selected"] = temp["greedy_rank"] == 1
+        temp["heuristic_score"] = 0
+        temp["heuristic_grade"] = "-"
+        temp["greedy_reason"] = "휴리스틱 모듈이 없어 비용 기준으로 임시 선택"
         return temp, temp.iloc[0]
 
     scored = add_heuristic_scores(final_recommendations)
@@ -476,27 +476,27 @@ def render_best_recommendation(greedy_best_candidate):
         '<div class="best-mini">'
         '<div class="best-label">상품명</div>'
         f'<div class="best-value">{product_name}</div>'
-        '</div>'
+        "</div>"
         '<div class="best-mini">'
         '<div class="best-label">추천 경로</div>'
         f'<div class="best-value">{source_store} → {target_store}</div>'
-        '</div>'
+        "</div>"
         '<div class="best-mini">'
         '<div class="best-label">추천 수량</div>'
         f'<div class="best-value">{suggested_qty}개</div>'
-        '</div>'
+        "</div>"
         '<div class="best-mini">'
         '<div class="best-label">예상 비용</div>'
         f'<div class="best-value">{format_money(estimated_cost)}</div>'
-        '</div>'
-        '</div>'
+        "</div>"
+        "</div>"
         '<div class="best-reason">'
-        f'<b>추천 전략:</b> {final_recommendation}<br>'
-        f'<b>휴리스틱 점수:</b> {heuristic_score}점 / {heuristic_grade}<br>'
-        f'<b>추천 이유:</b> {reason}<br>'
-        '<b>Greedy 선택 근거:</b> 휴리스틱 점수가 가장 높은 후보를 현재 조건의 최적 추천으로 선택했습니다.'
-        '</div>'
-        '</div>'
+        f"<b>추천 전략:</b> {final_recommendation}<br>"
+        f"<b>휴리스틱 점수:</b> {heuristic_score}점 / {heuristic_grade}<br>"
+        f"<b>추천 이유:</b> {reason}<br>"
+        "<b>Greedy 선택 근거:</b> 휴리스틱 점수가 가장 높은 후보를 현재 조건의 최적 추천으로 선택했습니다."
+        "</div>"
+        "</div>"
     )
 
     st.markdown(html, unsafe_allow_html=True)
@@ -509,24 +509,25 @@ def show_algorithm_explanation():
             <b>알고리즘 구조</b><br>
             1. 기존 악성재고 위험점수는 상품이 악성재고인지 판단하는 데 사용합니다.<br>
             2. 추천 후보에는 별도의 휴리스틱 점수를 부여합니다. 이 점수는 비용, 이동 수량, 추천 전략, 추천 이유를 반영합니다.<br>
-            3. Greedy 알고리즘은 현재 후보 중 휴리스틱 점수가 가장 높은 후보를 최적 추천 경로로 선택합니다.
+            3. Greedy 알고리즘은 현재 후보 중 휴리스틱 점수가 가장 높은 후보를 최적 추천 경로로 선택합니다.<br>
+            4. 강화학습 준비 데이터는 State / Action / Reward 구조로 변환되어 정책 학습에 사용됩니다.
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
 def get_matching_transfer_row(transfer_path_result, greedy_best_candidate):
-    if (
-        transfer_path_result is None
-        or transfer_path_result.empty
-        or greedy_best_candidate is None
-    ):
+    if transfer_path_result is None or transfer_path_result.empty or greedy_best_candidate is None:
         return None
 
     product_name = greedy_best_candidate.get("product_name", None)
     source_store = greedy_best_candidate.get("source_store", None)
     target_store = greedy_best_candidate.get("target_store", None)
+
+    required_cols = {"product_name", "source_store", "target_store", "recommended_path"}
+    if not required_cols.issubset(set(transfer_path_result.columns)):
+        return None
 
     matched = transfer_path_result[
         (transfer_path_result["product_name"] == product_name)
@@ -538,9 +539,7 @@ def get_matching_transfer_row(transfer_path_result, greedy_best_candidate):
     if not matched.empty:
         return matched.iloc[0]
 
-    candidates = transfer_path_result[
-        transfer_path_result["recommended_path"] != "이동 비추천"
-    ]
+    candidates = transfer_path_result[transfer_path_result["recommended_path"] != "이동 비추천"]
 
     if not candidates.empty:
         return candidates.iloc[0]
@@ -561,12 +560,12 @@ def show_main_hero():
                 <span class="badge">악성재고 판단</span>
                 <span class="badge">휴리스틱 점수</span>
                 <span class="badge blue-badge">Greedy 선택</span>
-                <span class="badge green-badge">Inventory 변화</span>
+                <span class="badge green-badge">강화학습 확장</span>
                 <span class="badge pink-badge">Truck 시뮬레이션</span>
             </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -590,14 +589,14 @@ def show_workflow():
             </div>
             <div class="workflow-card">
                 <div class="workflow-number">3</div>
-                <div class="workflow-title">Greedy 선택</div>
+                <div class="workflow-title">Greedy/RL 비교</div>
                 <div class="workflow-text">
-                    휴리스틱 점수가 가장 높은 후보를 선택하고, 지도와 Inventory 변화로 결과를 확인합니다.
+                    Greedy 추천과 강화학습 정책 추천을 비교하고, 지도에서 Truck 이동과 Inventory 변화를 확인합니다.
                 </div>
             </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -606,18 +605,17 @@ def show_mode_header(title, description, badges=None):
 
     if badges:
         for badge in badges:
-            badge_html += f'<span class="badge">{badge}</span>'
+            badge_html += f'<span class="badge">{escape_text(badge)}</span>'
 
-    st.markdown(
-        f"""
-        <div class="mode-header">
-            <h2>{title}</h2>
-            <p>{description}</p>
-            <div style="margin-top:14px;">{badge_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
+    html = (
+        '<div class="mode-header">'
+        f"<h2>{escape_text(title)}</h2>"
+        f"<p>{escape_text(description)}</p>"
+        f'<div style="margin-top:14px;">{badge_html}</div>'
+        "</div>"
     )
+
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def show_back_button():
@@ -641,18 +639,18 @@ def show_excel_feature_cards():
                 <div class="feature-desc">현재 조건에서 휴리스틱 점수가 가장 높은 후보를 최적 경로로 선택합니다.</div>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">🚚</div>
-                <div class="feature-title">Truck 시뮬레이션</div>
-                <div class="feature-desc">선택된 추천 경로를 따라 Truck 이동을 카카오맵 위에서 확인합니다.</div>
+                <div class="feature-icon">🤖</div>
+                <div class="feature-title">강화학습 정책</div>
+                <div class="feature-desc">State/Action/Reward 데이터를 만들고 학습된 정책과 추천 결과를 비교합니다.</div>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">📦</div>
-                <div class="feature-title">Inventory 변화</div>
-                <div class="feature-desc">보내는 점포와 받는 점포의 이동 전후 재고 변화를 보여줍니다.</div>
+                <div class="feature-icon">🚚</div>
+                <div class="feature-title">Multi-Truck</div>
+                <div class="feature-desc">지도에서 경로를 클릭해 선택하고 여러 Truck을 동시에 이동시킵니다.</div>
             </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -686,7 +684,7 @@ def show_mode_selector():
                 </div>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         if st.button("🧮 개별 입력 계산 시작", use_container_width=True, type="primary"):
@@ -700,7 +698,7 @@ def show_mode_selector():
                 <h3>📊 엑셀 기반 최적 경로 추천</h3>
                 <p>
                 여러 점포, 상품, 재고, 경로 데이터를 엑셀로 업로드하여
-                휴리스틱 점수와 Greedy 알고리즘으로 최적 재배치 경로를 추천합니다.
+                휴리스틱 점수, Greedy 알고리즘, 강화학습 정책 비교를 수행합니다.
                 </p>
                 <p><b>추천 상황</b></p>
                 <ul>
@@ -709,11 +707,11 @@ def show_mode_selector():
                     <li>지도와 Truck 이동을 시각화할 때</li>
                 </ul>
                 <div class="mode-mini">
-                    휴리스틱 점수로 후보를 평가하고 Greedy 알고리즘으로 최적 후보를 선택합니다.
+                    지도에서 경로를 클릭해 Truck 이동과 Inventory 변화를 확인할 수 있습니다.
                 </div>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
         if st.button("📊 엑셀 기반 분석 시작", use_container_width=True, type="primary"):
@@ -732,7 +730,7 @@ def show_single_calculator():
     show_mode_header(
         "🧮 개별 입력 기반 악성재고 계산",
         "단일 점포와 단일 상품을 기준으로 악성재고 여부, 비용 비교, 최종 처리 전략을 계산합니다.",
-        ["기존 점수제도 유지", "악성재고 위험 판단", "비용 비교", "계산식 확인"]
+        ["기존 점수제도 유지", "악성재고 위험 판단", "비용 비교", "계산식 확인"],
     )
 
     st.sidebar.header("개별 입력값 설정")
@@ -752,13 +750,13 @@ def show_single_calculator():
         "할인율(%)",
         min_value=0.0,
         max_value=100.0,
-        value=20.0
+        value=20.0,
     )
 
     expected_sales_increase_rate = st.sidebar.number_input(
         "할인 시 판매 증가율(%)",
         min_value=0.0,
-        value=50.0
+        value=50.0,
     )
 
     transfer_possible = st.sidebar.selectbox("타점포 이동 가능 여부", ["가능", "불가능"])
@@ -773,7 +771,7 @@ def show_single_calculator():
     col_a.write(f"점포명: **{store_name}**")
     col_b.write(f"상품명: **{product_name}**")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("계산 시작", type="primary", use_container_width=True):
         result = calculate_inventory_analysis(
@@ -819,7 +817,7 @@ def show_single_calculator():
         else:
             st.write("위험 요소가 크지 않습니다.")
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("비용 비교")
@@ -850,7 +848,7 @@ def show_single_calculator():
 
         st.dataframe(cost_df, use_container_width=True)
         st.bar_chart(cost_df, x="전략", y="비용")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("최종 추천")
@@ -858,7 +856,7 @@ def show_single_calculator():
         st.success(f"추천 전략: {result['best_action']}")
         st.write(f"추천 이유: {result['recommendation_reason']}")
         st.write(f"발주 조언: **{result['order_advice']}**")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown('<div class="section-card">', unsafe_allow_html=True)
         st.subheader("할인율별 비교")
@@ -873,7 +871,7 @@ def show_single_calculator():
         )
 
         st.bar_chart(discount_chart_data, x="할인율", y="순비용")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("계산 방식 보기"):
             st.write(result["formula_text"]["stock_cover_days_formula"])
@@ -892,8 +890,8 @@ def show_excel_optimizer():
 
     show_mode_header(
         "📊 엑셀 기반 최적 경로 추천",
-        "여러 점포, 상품, 재고, 경로 데이터를 기반으로 휴리스틱 점수와 Greedy 알고리즘을 적용합니다.",
-        ["엑셀 업로드", "휴리스틱 점수", "Greedy 알고리즘", "Truck 시뮬레이션", "Inventory 변화"]
+        "여러 점포, 상품, 재고, 경로 데이터를 기반으로 휴리스틱 점수, Greedy 알고리즘, 강화학습 정책 비교를 적용합니다.",
+        ["엑셀 업로드", "휴리스틱 점수", "Greedy 알고리즘", "강화학습 정책", "Multi-Truck"],
     )
 
     show_excel_feature_cards()
@@ -909,7 +907,7 @@ def show_excel_optimizer():
     kakao_js_key = st.sidebar.text_input(
         "카카오맵 JavaScript 키 입력",
         type="password",
-        help="카카오 개발자 사이트에서 복사한 JavaScript 키를 입력하세요."
+        help="카카오 개발자 사이트에서 복사한 JavaScript 키를 입력하세요.",
     )
 
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
@@ -917,10 +915,10 @@ def show_excel_optimizer():
 
     uploaded_file = st.file_uploader(
         "편의점 재고 데이터 엑셀 파일을 업로드하세요",
-        type=["xlsx"]
+        type=["xlsx"],
     )
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if uploaded_file is None:
         st.info("엑셀 파일을 업로드하면 분석이 시작됩니다.")
@@ -954,18 +952,27 @@ def show_excel_optimizer():
 
     with st.expander("원본 엑셀 데이터 보기"):
         st.write("stores 시트")
-        st.dataframe(stores)
+        st.dataframe(stores, use_container_width=True)
 
         st.write("products 시트")
-        st.dataframe(products)
+        st.dataframe(products, use_container_width=True)
 
         st.write("inventory 시트")
-        st.dataframe(inventory)
+        st.dataframe(inventory, use_container_width=True)
 
         st.write("routes 시트")
-        st.dataframe(routes)
+        st.dataframe(routes, use_container_width=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+        extra_sheet_names = [
+            name for name in excel_data.keys()
+            if name not in ["stores", "products", "inventory", "routes"]
+        ]
+
+        for sheet_name in extra_sheet_names:
+            st.write(f"{sheet_name} 시트")
+            st.dataframe(excel_data[sheet_name], use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # 분석 조건
@@ -979,14 +986,14 @@ def show_excel_optimizer():
         departure_time = st.time_input(
             "DC/점포 출발 예정 시간",
             value=time(9, 0),
-            key="departure_time_excel"
+            key="departure_time_excel",
         )
 
     with setting_col2:
         promotion_type = st.selectbox(
             "프로모션 유형",
             ["할인 프로모션", "1+1 프로모션"],
-            key="promotion_type_excel"
+            key="promotion_type_excel",
         )
 
     with setting_col3:
@@ -995,7 +1002,7 @@ def show_excel_optimizer():
             min_value=0.0,
             max_value=100.0,
             value=20.0,
-            key="promotion_discount_rate_excel"
+            key="promotion_discount_rate_excel",
         )
 
     setting_col4, setting_col5 = st.columns(2)
@@ -1006,7 +1013,7 @@ def show_excel_optimizer():
             min_value=0.0,
             max_value=500.0,
             value=80.0,
-            key="promotion_sales_increase_rate_excel"
+            key="promotion_sales_increase_rate_excel",
         )
 
     with setting_col5:
@@ -1014,10 +1021,10 @@ def show_excel_optimizer():
             "프로모션 고정비(원)",
             min_value=0,
             value=0,
-            key="promotion_fixed_cost_excel"
+            key="promotion_fixed_cost_excel",
         )
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # 분석 계산
@@ -1034,13 +1041,13 @@ def show_excel_optimizer():
         cutline_result, best_valid_routes, no_valid_items = analyze_product_distance_cutline(
             products,
             inventory,
-            dc_routes
+            dc_routes,
         )
 
         time_result, time_error = analyze_trade_time_windows(
             cutline_result,
             stores,
-            departure_time
+            departure_time,
         )
 
     transfer_path_result = analyze_direct_vs_dc_transfer(
@@ -1048,7 +1055,7 @@ def show_excel_optimizer():
         products,
         inventory,
         routes,
-        departure_time
+        departure_time,
     )
 
     promotion_result = analyze_promotion_vs_transfer(
@@ -1058,7 +1065,7 @@ def show_excel_optimizer():
         promotion_type,
         promotion_discount_rate,
         promotion_sales_increase_rate,
-        promotion_fixed_cost
+        promotion_fixed_cost,
     )
 
     network_path_result, network_error = analyze_multi_store_network_paths(
@@ -1066,21 +1073,21 @@ def show_excel_optimizer():
         products,
         routes,
         transfer_path_result,
-        departure_time
+        departure_time,
     )
 
     final_recommendations, final_rec_summary = build_final_recommendations(
         promotion_result,
-        network_path_result
+        network_path_result,
     )
 
     final_recommendations, greedy_best_candidate = apply_heuristic_and_greedy(
-        final_recommendations
+        final_recommendations,
     )
 
     greedy_transfer_row = get_matching_transfer_row(
         transfer_path_result,
-        greedy_best_candidate
+        greedy_best_candidate,
     )
 
     # =========================
@@ -1093,7 +1100,6 @@ def show_excel_optimizer():
         st.info("최종 추천으로 정리할 결과가 없습니다.")
     else:
         render_best_recommendation(greedy_best_candidate)
-
         show_algorithm_explanation()
 
         summary_col1, summary_col2 = st.columns(2)
@@ -1104,43 +1110,44 @@ def show_excel_optimizer():
         st.write("추천 유형 요약")
         st.dataframe(final_rec_summary, use_container_width=True)
 
-        st.bar_chart(
-            final_rec_summary.set_index("final_recommendation")["count"]
-        )
+        if not final_rec_summary.empty and "final_recommendation" in final_rec_summary.columns:
+            st.bar_chart(final_rec_summary.set_index("final_recommendation")["count"])
 
         st.write("최종 추천 상세")
+        display_cols = [
+            "product_name",
+            "source_store",
+            "target_store",
+            "suggested_qty",
+            "final_recommendation",
+            "estimated_cost",
+            "reason",
+        ]
+
         st.dataframe(
-            final_recommendations[
-                [
-                    "product_name",
-                    "source_store",
-                    "target_store",
-                    "suggested_qty",
-                    "final_recommendation",
-                    "estimated_cost",
-                    "reason",
-                ]
-            ],
-            use_container_width=True
+            final_recommendations[[c for c in display_cols if c in final_recommendations.columns]],
+            use_container_width=True,
         )
 
         if "heuristic_score" in final_recommendations.columns:
             st.markdown("---")
             st.subheader("🧠 휴리스틱 점수 + Greedy 선택 결과")
 
+            heuristic_cols = [
+                "greedy_rank",
+                "product_name",
+                "source_store",
+                "target_store",
+                "suggested_qty",
+                "estimated_cost",
+                "final_recommendation",
+                "heuristic_score",
+                "heuristic_grade",
+                "greedy_reason",
+            ]
+
             heuristic_view = final_recommendations[
-                [
-                    "greedy_rank",
-                    "product_name",
-                    "source_store",
-                    "target_store",
-                    "suggested_qty",
-                    "estimated_cost",
-                    "final_recommendation",
-                    "heuristic_score",
-                    "heuristic_grade",
-                    "greedy_reason",
-                ]
+                [c for c in heuristic_cols if c in final_recommendations.columns]
             ].rename(
                 columns={
                     "greedy_rank": "Greedy 순위",
@@ -1158,6 +1165,151 @@ def show_excel_optimizer():
 
             st.dataframe(heuristic_view, use_container_width=True)
 
+            # =========================
+            # 강화학습 준비 데이터 생성 + RL 정책 비교
+            # =========================
+            st.markdown("---")
+            st.subheader("🤖 강화학습 준비 데이터 생성")
+
+            st.info(
+                "현재 추천 후보들을 강화학습 학습용 데이터 형태로 변환합니다. "
+                "State는 재고·판매량·비용·거리 정보, Action은 추천 행동, "
+                "Reward는 비용 절감과 휴리스틱 점수를 반영한 임시 보상입니다."
+            )
+
+            try:
+                from rl_data_logger import build_rl_training_log
+
+                rl_training_log = build_rl_training_log(
+                    stores=stores,
+                    products=products,
+                    inventory=inventory,
+                    final_recommendations=final_recommendations,
+                    transfer_path_result=transfer_path_result,
+                    promotion_result=promotion_result,
+                )
+
+                if rl_training_log.empty:
+                    st.warning("생성할 강화학습 학습 데이터가 없습니다.")
+                else:
+                    rl_col1, rl_col2, rl_col3 = st.columns(3)
+
+                    rl_col1.metric("RL 학습 샘플 수", f"{len(rl_training_log)}개")
+                    rl_col2.metric("평균 Reward", f"{rl_training_log['reward'].mean():.2f}")
+                    rl_col3.metric("최대 Reward", f"{rl_training_log['reward'].max():.2f}")
+
+                    with st.expander("강화학습 학습 데이터 미리보기"):
+                        st.dataframe(rl_training_log, use_container_width=True)
+
+                    csv_data = rl_training_log.to_csv(index=False).encode("utf-8-sig")
+
+                    st.download_button(
+                        label="📥 RL 학습 데이터 CSV 다운로드",
+                        data=csv_data,
+                        file_name="rl_training_log.csv",
+                        mime="text/csv",
+                        key="download_rl_training_log",
+                    )
+
+                    st.markdown("---")
+                    st.subheader("🧩 Greedy 추천 vs 강화학습 추천 비교")
+
+                    try:
+                        from rl_policy_helper import recommend_action_for_rl_log
+
+                        rl_compare_result = recommend_action_for_rl_log(
+                            rl_training_log,
+                            policy_file="rl_policy_table.csv",
+                        )
+
+                        if rl_compare_result.empty:
+                            st.warning(
+                                "강화학습 정책 비교 결과가 없습니다. "
+                                "rl_policy_table.csv 파일이 프로젝트 폴더에 있는지 확인해 주세요."
+                            )
+                        else:
+                            matched_count = int(
+                                (rl_compare_result["rl_match_status"] == "정책 매칭됨").sum()
+                            )
+
+                            compare_col1, compare_col2, compare_col3 = st.columns(3)
+
+                            compare_col1.metric("비교 후보 수", f"{len(rl_compare_result)}개")
+                            compare_col2.metric("RL 정책 매칭 수", f"{matched_count}개")
+
+                            if rl_compare_result["expected_reward"].notna().any():
+                                avg_expected_reward = rl_compare_result["expected_reward"].dropna().mean()
+                                compare_col3.metric("평균 기대 Reward", f"{avg_expected_reward:.2f}")
+                            else:
+                                compare_col3.metric("평균 기대 Reward", "-")
+
+                            rl_compare_cols = [
+                                "product_name",
+                                "source_store",
+                                "target_store",
+                                "action",
+                                "rl_recommended_action",
+                                "reward",
+                                "expected_reward",
+                                "heuristic_score",
+                                "greedy_rank",
+                                "rl_match_status",
+                            ]
+
+                            rl_compare_view = rl_compare_result[
+                                [c for c in rl_compare_cols if c in rl_compare_result.columns]
+                            ].rename(
+                                columns={
+                                    "product_name": "상품명",
+                                    "source_store": "보내는 점포",
+                                    "target_store": "받는 점포",
+                                    "action": "현재 추천 Action",
+                                    "rl_recommended_action": "강화학습 추천 Action",
+                                    "reward": "현재 Reward",
+                                    "expected_reward": "RL 기대 Reward",
+                                    "heuristic_score": "휴리스틱 점수",
+                                    "greedy_rank": "Greedy 순위",
+                                    "rl_match_status": "RL 매칭 상태",
+                                }
+                            )
+
+                            st.dataframe(rl_compare_view, use_container_width=True)
+
+                            with st.expander("강화학습 정책 근거 보기"):
+                                policy_reason_cols = [
+                                    "product_name",
+                                    "source_store",
+                                    "target_store",
+                                    "state_key",
+                                    "policy_reason",
+                                ]
+
+                                policy_reason_view = rl_compare_result[
+                                    [c for c in policy_reason_cols if c in rl_compare_result.columns]
+                                ].rename(
+                                    columns={
+                                        "product_name": "상품명",
+                                        "source_store": "보내는 점포",
+                                        "target_store": "받는 점포",
+                                        "state_key": "상태 Key",
+                                        "policy_reason": "정책 선택 근거",
+                                    }
+                                )
+
+                                st.dataframe(policy_reason_view, use_container_width=True)
+
+                    except FileNotFoundError:
+                        st.warning("rl_policy_table.csv 파일을 찾지 못했습니다. 먼저 py train_rl_agent.py를 실행해 주세요.")
+                    except ImportError:
+                        st.warning("rl_policy_helper.py 파일을 찾지 못했습니다. 먼저 프로젝트 폴더에 추가해 주세요.")
+                    except Exception as e:
+                        st.warning(f"강화학습 정책 비교 중 오류가 발생했습니다: {e}")
+
+            except ImportError:
+                st.warning("rl_data_logger.py 파일을 찾지 못했습니다. 먼저 rl_data_logger.py를 프로젝트 폴더에 추가해 주세요.")
+            except Exception as e:
+                st.warning(f"강화학습 학습 데이터 생성 중 오류가 발생했습니다: {e}")
+
         st.subheader("🧺 Inventory 장바구니 담기")
 
         final_recommendations_view = final_recommendations.reset_index(drop=True)
@@ -1171,7 +1323,7 @@ def show_excel_optimizer():
                 f"{final_recommendations_view.loc[i, 'target_store']} | "
                 f"{final_recommendations_view.loc[i, 'final_recommendation']}"
             ),
-            key="cart_select_recommendation"
+            key="cart_select_recommendation",
         )
 
         if st.button("🛒 Inventory에 담기", key="add_to_inventory_cart"):
@@ -1190,7 +1342,7 @@ def show_excel_optimizer():
             st.session_state.cart.append(cart_item)
             st.success("Inventory 장바구니에 담았습니다.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # Inventory 장바구니
@@ -1243,7 +1395,7 @@ def show_excel_optimizer():
             st.session_state.cart = []
             st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # 카카오맵
@@ -1256,10 +1408,10 @@ def show_excel_optimizer():
     else:
         st.info("카카오맵을 보려면 왼쪽 사이드바에 JavaScript 키를 입력하세요.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
-    # 추천 경로 강조
+    # 추천 경로 강조 지도
     # =========================
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
     st.subheader("추천 경로 강조 지도")
@@ -1332,18 +1484,21 @@ def show_excel_optimizer():
                 }
             )
 
-    if not network_path_result.empty:
+    if not network_path_result.empty and "network_recommendation" in network_path_result.columns:
         network_recommended_paths = network_path_result[
             network_path_result["network_recommendation"] == "다중 경로 추천"
         ]
 
         for _, network_row in network_recommended_paths.iterrows():
+            if "network_path" not in network_row.index:
+                continue
+
             path_names = str(network_row["network_path"]).split(" → ")
 
             highlight_paths.append(
                 {
                     "path_names": path_names,
-                    "label": f"{network_row['product_name']} - 다중 경로 추천",
+                    "label": f"{network_row.get('product_name', '-') } - 다중 경로 추천",
                 }
             )
 
@@ -1352,20 +1507,20 @@ def show_excel_optimizer():
             stores,
             routes,
             kakao_js_key,
-            highlight_paths
+            highlight_paths,
         )
     elif not kakao_js_key:
         st.info("추천 경로 지도를 보려면 왼쪽 사이드바에 카카오맵 JavaScript 키를 입력하세요.")
     else:
         st.info("강조 표시할 추천 경로가 없습니다.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # Truck 이동 + Inventory 변화
     # =========================
     st.markdown('<div class="section-card">', unsafe_allow_html=True)
-    st.subheader("🚚 Truck 이동 시뮬레이션 + Inventory 변화")
+    st.subheader("🚚 지도 클릭 기반 Multi-Truck 이동 시뮬레이션")
 
     truck_speed = st.slider(
         "Truck 이동 배속",
@@ -1373,7 +1528,25 @@ def show_excel_optimizer():
         max_value=10.0,
         value=1.0,
         step=0.5,
-        key="truck_speed_slider"
+        key="truck_speed_slider",
+    )
+
+    max_truck_routes = st.slider(
+        "지도에 표시할 추천 경로 후보 수",
+        min_value=3,
+        max_value=20,
+        value=8,
+        step=1,
+        key="max_truck_routes_slider",
+    )
+
+    default_selected_count = st.slider(
+        "처음 자동 선택할 Truck 수",
+        min_value=1,
+        max_value=5,
+        value=3,
+        step=1,
+        key="default_selected_truck_count",
     )
 
     store_location_map = {}
@@ -1390,48 +1563,69 @@ def show_excel_optimizer():
                 "lng": float(row["longitude"]),
             }
 
-    truck_path = []
-    inventory_change_info = {}
+    store_name_to_id = dict(zip(stores["store_name"], stores["store_id"]))
+    product_name_to_id = dict(zip(products["product_name"], products["product_id"]))
 
-    if highlight_paths:
-        first_path_names = highlight_paths[0]["path_names"]
+    def get_current_stock(store_id, product_id_value):
+        if store_id is None or product_id_value is None:
+            return 0
 
-        for store_name_in_path in first_path_names:
-            if store_name_in_path in store_location_map:
-                truck_path.append(store_location_map[store_name_in_path])
+        matched = inventory[
+            (inventory["store_id"] == store_id)
+            & (inventory["product_id"] == product_id_value)
+        ]
 
-    selected_transfer = greedy_transfer_row
+        if matched.empty:
+            return 0
 
-    if selected_transfer is not None:
-        selected_product_name = selected_transfer["product_name"]
-        source_store_name = selected_transfer["source_store"]
-        target_store_name = selected_transfer["target_store"]
+        return int(matched.iloc[0]["stock_qty"])
+
+    def get_recommendation_match(path_row):
+        if final_recommendations is None or final_recommendations.empty:
+            return None
+
+        matched = final_recommendations[
+            (final_recommendations["product_name"] == path_row["product_name"])
+            & (final_recommendations["source_store"] == path_row["source_store"])
+            & (final_recommendations["target_store"] == path_row["target_store"])
+        ]
+
+        if matched.empty:
+            return None
+
+        return matched.iloc[0]
+
+    def build_scenario(path_row, scenario_rank):
+        selected_product_name = path_row["product_name"]
+        source_store_name = path_row["source_store"]
+        target_store_name = path_row["target_store"]
+        recommended_path = path_row["recommended_path"]
 
         try:
-            move_qty = int(selected_transfer["suggested_transfer_qty"])
+            move_qty = int(path_row["suggested_transfer_qty"])
         except Exception:
             move_qty = 0
 
-        store_name_to_id = dict(zip(stores["store_name"], stores["store_id"]))
-        product_name_to_id = dict(zip(products["product_name"], products["product_id"]))
+        if recommended_path == "DC 경유 이동 추천":
+            via_dc_name = path_row.get("via_dc", None)
+
+            if via_dc_name and pd.notna(via_dc_name):
+                path_names = [source_store_name, via_dc_name, target_store_name]
+            else:
+                path_names = [source_store_name, target_store_name]
+        else:
+            via_dc_name = None
+            path_names = [source_store_name, target_store_name]
+
+        truck_path = []
+
+        for name in path_names:
+            if name in store_location_map:
+                truck_path.append(store_location_map[name])
 
         source_store_id = store_name_to_id.get(source_store_name)
         target_store_id = store_name_to_id.get(target_store_name)
         product_id = product_name_to_id.get(selected_product_name)
-
-        def get_current_stock(store_id, product_id_value):
-            if store_id is None or product_id_value is None:
-                return 0
-
-            matched = inventory[
-                (inventory["store_id"] == store_id)
-                & (inventory["product_id"] == product_id_value)
-            ]
-
-            if matched.empty:
-                return 0
-
-            return int(matched.iloc[0]["stock_qty"])
 
         source_before = get_current_stock(source_store_id, product_id)
         target_before = get_current_stock(target_store_id, product_id)
@@ -1456,51 +1650,115 @@ def show_excel_optimizer():
             },
         }
 
-        if selected_transfer["recommended_path"] == "DC 경유 이동 추천":
-            via_dc_name = selected_transfer.get("via_dc", None)
+        if recommended_path == "DC 경유 이동 추천" and via_dc_name:
+            via_dc_id = store_name_to_id.get(via_dc_name)
+            via_before = get_current_stock(via_dc_id, product_id)
 
-            if via_dc_name:
-                via_dc_id = store_name_to_id.get(via_dc_name)
-                via_before = get_current_stock(via_dc_id, product_id)
+            store_inventory[via_dc_name] = {
+                "role": "경유 DC",
+                "product_name": selected_product_name,
+                "before": via_before,
+                "after": via_before,
+                "change": 0,
+            }
 
-                store_inventory[via_dc_name] = {
-                    "role": "경유 DC",
-                    "product_name": selected_product_name,
-                    "before": via_before,
-                    "after": via_before,
-                    "change": 0,
-                }
+        rec_match = get_recommendation_match(path_row)
 
-        inventory_change_info = {
+        if rec_match is not None:
+            estimated_cost = rec_match.get("estimated_cost", "-")
+            heuristic_score = rec_match.get("heuristic_score", "-")
+            reason = rec_match.get("reason", "-")
+        else:
+            estimated_cost = path_row.get("direct_cost", path_row.get("via_cost", "-"))
+            heuristic_score = "-"
+            reason = path_row.get("recommendation_reason", "-")
+
+        return {
+            "label": f"{scenario_rank}. {selected_product_name} / {source_store_name} → {target_store_name}",
             "product_name": selected_product_name,
-            "move_qty": move_qty,
             "source_store": source_store_name,
             "target_store": target_store_name,
-            "recommended_path": selected_transfer["recommended_path"],
+            "move_qty": move_qty,
+            "recommended_path": recommended_path,
+            "estimated_cost": str(estimated_cost),
+            "heuristic_score": str(heuristic_score),
+            "reason": str(reason),
+            "path_names": path_names,
+            "path": truck_path,
             "store_inventory": store_inventory,
         }
 
-    if show_kakao_map_with_truck is None:
-        st.warning("kakao_map_viewer.py에 show_kakao_map_with_truck 함수가 없습니다.")
+    if not transfer_path_result.empty:
+        truck_candidates = transfer_path_result[
+            transfer_path_result["recommended_path"] != "이동 비추천"
+        ].copy()
+    else:
+        truck_candidates = pd.DataFrame()
 
-    elif kakao_js_key and len(truck_path) >= 2:
-        st.info("Greedy 알고리즘이 선택한 최적 추천 경로를 기준으로 Truck 이동과 Inventory 변화를 시뮬레이션합니다.")
+    if (
+        not truck_candidates.empty
+        and final_recommendations is not None
+        and not final_recommendations.empty
+        and "greedy_rank" in final_recommendations.columns
+    ):
+        rank_map = {}
 
-        show_kakao_map_with_truck(
-            stores,
-            routes,
-            kakao_js_key,
-            truck_path,
-            speed_multiplier=truck_speed,
-            inventory_changes=inventory_change_info,
+        for _, rec_row in final_recommendations.iterrows():
+            key = (
+                rec_row["product_name"],
+                rec_row["source_store"],
+                rec_row["target_store"],
+            )
+            rank_map[key] = rec_row.get("greedy_rank", 9999)
+
+        truck_candidates["greedy_rank_for_truck"] = truck_candidates.apply(
+            lambda row: rank_map.get(
+                (row["product_name"], row["source_store"], row["target_store"]),
+                9999,
+            ),
+            axis=1,
         )
+
+        truck_candidates = truck_candidates.sort_values("greedy_rank_for_truck")
+
+    truck_candidates = truck_candidates.head(max_truck_routes)
+
+    if truck_candidates.empty:
+        st.info("Truck 이동을 표시할 추천 경로가 없습니다.")
 
     elif not kakao_js_key:
         st.info("Truck 이동 시뮬레이션을 보려면 왼쪽 사이드바에 카카오맵 JavaScript 키를 입력하세요.")
-    else:
-        st.info("Truck 이동을 표시할 추천 경로가 없습니다.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    elif show_kakao_map_with_multi_trucks is None:
+        st.warning("kakao_map_viewer.py에 show_kakao_map_with_multi_trucks 함수가 없습니다.")
+
+    else:
+        truck_scenarios = []
+
+        for scenario_rank, (_, candidate_row) in enumerate(truck_candidates.iterrows(), start=1):
+            scenario = build_scenario(candidate_row, scenario_rank)
+
+            if len(scenario["path"]) >= 2:
+                truck_scenarios.append(scenario)
+
+        if not truck_scenarios:
+            st.info("지도에 표시 가능한 Truck 경로가 없습니다.")
+        else:
+            st.info(
+                "지도 위 색깔 경로선을 클릭하면 선택/해제됩니다. "
+                "여러 경로를 선택한 뒤 지도 아래의 '선택 경로 Truck 재생' 버튼을 누르면 여러 Truck이 동시에 이동합니다."
+            )
+
+            show_kakao_map_with_multi_trucks(
+                stores,
+                routes,
+                kakao_js_key,
+                truck_scenarios,
+                speed_multiplier=truck_speed,
+                default_selected_count=default_selected_count,
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     # =========================
     # 상세 분석 결과
@@ -1526,14 +1784,15 @@ def show_excel_optimizer():
             st.warning("DC와 점포를 연결하는 route 데이터가 없습니다.")
         else:
             st.write("DC-점포 전체 경로 계산 결과")
-            st.dataframe(dc_routes)
+            st.dataframe(dc_routes, use_container_width=True)
 
             st.write("점포별 최적 DC 추천")
-            st.dataframe(best_dc_by_retailer)
+            st.dataframe(best_dc_by_retailer, use_container_width=True)
 
-            st.write("점포별 최저 운송비 그래프")
-            chart_data = best_dc_by_retailer.set_index("retailer_name")["transport_cost"]
-            st.bar_chart(chart_data)
+            if not best_dc_by_retailer.empty and "retailer_name" in best_dc_by_retailer.columns:
+                st.write("점포별 최저 운송비 그래프")
+                chart_data = best_dc_by_retailer.set_index("retailer_name")["transport_cost"]
+                st.bar_chart(chart_data)
 
     with tab2:
         st.subheader("제품별 거리 컷라인 판별")
@@ -1542,19 +1801,19 @@ def show_excel_optimizer():
             st.warning("제품별 거리 컷라인 분석 결과가 없습니다.")
         else:
             st.write("제품별 DC-점포 이동 가능 여부")
-            st.dataframe(cutline_result)
+            st.dataframe(cutline_result, use_container_width=True)
 
             st.write("제품별/점포별 컷라인 내 최적 DC")
-            if best_valid_routes.empty:
+            if best_valid_routes is None or best_valid_routes.empty:
                 st.warning("거리 컷라인을 만족하는 이동 가능 경로가 없습니다.")
             else:
-                st.dataframe(best_valid_routes)
+                st.dataframe(best_valid_routes, use_container_width=True)
 
             st.write("거리 컷라인 때문에 이동 불가능한 품목")
-            if no_valid_items.empty:
+            if no_valid_items is None or no_valid_items.empty:
                 st.success("모든 품목이 최소 1개 이상의 이동 가능 경로를 가지고 있습니다.")
             else:
-                st.dataframe(no_valid_items)
+                st.dataframe(no_valid_items, use_container_width=True)
 
     with tab3:
         st.subheader("거래가능시간 판별")
@@ -1565,7 +1824,7 @@ def show_excel_optimizer():
             st.warning("거래가능시간 분석 결과가 없습니다.")
         else:
             st.write("거리 컷라인 + 거래가능시간 판별 결과")
-            st.dataframe(time_result)
+            st.dataframe(time_result, use_container_width=True)
 
             time_summary = (
                 time_result.groupby("final_status")
@@ -1574,7 +1833,7 @@ def show_excel_optimizer():
             )
 
             st.write("최종 이동 가능 여부 요약")
-            st.dataframe(time_summary)
+            st.dataframe(time_summary, use_container_width=True)
             st.bar_chart(time_summary.set_index("final_status")["count"])
 
     with tab4:
@@ -1583,17 +1842,18 @@ def show_excel_optimizer():
         if transfer_path_result.empty:
             st.warning("점포 간 이동 비교가 가능한 후보가 없습니다.")
         else:
-            st.dataframe(transfer_path_result)
+            st.dataframe(transfer_path_result, use_container_width=True)
 
-            path_summary = (
-                transfer_path_result.groupby("recommended_path")
-                .size()
-                .reset_index(name="count")
-            )
+            if "recommended_path" in transfer_path_result.columns:
+                path_summary = (
+                    transfer_path_result.groupby("recommended_path")
+                    .size()
+                    .reset_index(name="count")
+                )
 
-            st.write("추천 경로 요약")
-            st.dataframe(path_summary)
-            st.bar_chart(path_summary.set_index("recommended_path")["count"])
+                st.write("추천 경로 요약")
+                st.dataframe(path_summary, use_container_width=True)
+                st.bar_chart(path_summary.set_index("recommended_path")["count"])
 
     with tab5:
         st.subheader("프로모션 vs 재배치 비교")
@@ -1601,25 +1861,27 @@ def show_excel_optimizer():
         if promotion_result.empty:
             st.warning("프로모션과 비교할 수 있는 이동 후보가 없습니다.")
         else:
-            st.dataframe(promotion_result)
+            st.dataframe(promotion_result, use_container_width=True)
 
-            promo_summary = (
-                promotion_result.groupby("final_decision")
-                .size()
-                .reset_index(name="count")
-            )
+            if "final_decision" in promotion_result.columns:
+                promo_summary = (
+                    promotion_result.groupby("final_decision")
+                    .size()
+                    .reset_index(name="count")
+                )
 
-            st.write("최종 처리 방식 요약")
-            st.dataframe(promo_summary)
-            st.bar_chart(promo_summary.set_index("final_decision")["count"])
+                st.write("최종 처리 방식 요약")
+                st.dataframe(promo_summary, use_container_width=True)
+                st.bar_chart(promo_summary.set_index("final_decision")["count"])
 
-            with st.expander("프로모션 계산식 보기"):
-                for _, promo_row in promotion_result.iterrows():
-                    st.write(
-                        f"{promo_row['product_name']} / "
-                        f"{promo_row['source_store']} → {promo_row['target_store']}: "
-                        f"{promo_row['promotion_formula']}"
-                    )
+            if "promotion_formula" in promotion_result.columns:
+                with st.expander("프로모션 계산식 보기"):
+                    for _, promo_row in promotion_result.iterrows():
+                        st.write(
+                            f"{promo_row['product_name']} / "
+                            f"{promo_row['source_store']} → {promo_row['target_store']}: "
+                            f"{promo_row['promotion_formula']}"
+                        )
 
     with tab6:
         st.subheader("여러 점포 연결 최저비용 경로 계산")
@@ -1629,19 +1891,20 @@ def show_excel_optimizer():
         elif network_path_result.empty:
             st.warning("계산 가능한 다중 연결 경로가 없습니다.")
         else:
-            st.dataframe(network_path_result)
+            st.dataframe(network_path_result, use_container_width=True)
 
-            network_summary = (
-                network_path_result.groupby("network_recommendation")
-                .size()
-                .reset_index(name="count")
-            )
+            if "network_recommendation" in network_path_result.columns:
+                network_summary = (
+                    network_path_result.groupby("network_recommendation")
+                    .size()
+                    .reset_index(name="count")
+                )
 
-            st.write("다중 경로 추천 요약")
-            st.dataframe(network_summary)
-            st.bar_chart(network_summary.set_index("network_recommendation")["count"])
+                st.write("다중 경로 추천 요약")
+                st.dataframe(network_summary, use_container_width=True)
+                st.bar_chart(network_summary.set_index("network_recommendation")["count"])
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =========================
@@ -1662,5 +1925,5 @@ st.markdown(
         © 2026 김서호. All rights reserved. | Varo 편의점 재고 공유 및 최적 의사결정 시스템
     </div>
     """,
-    unsafe_allow_html=True
+    unsafe_allow_html=True,
 )
